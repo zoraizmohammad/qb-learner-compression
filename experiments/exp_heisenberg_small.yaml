@@ -1,0 +1,14 @@
+name: heisenberg_small
+
+model:
+  n_qubits: 2
+  depth: 3
+  pairs:
+    - [0, 1]
+
+training:
+  steps: 200
+  lambda: 0.05
+  prune_every: 20
+  prune_tolerance: 0.01
+  backend: "FakeManila"
