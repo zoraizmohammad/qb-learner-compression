@@ -1,0 +1,12 @@
+experiment_name: "baseline_pothos_large_channel08"
+mode: "baseline"
+
+n_qubits: 2
+depth: 3
+n_iterations: 150
+lr: 0.01
+lam: 0.01
+dataset_name: "pothos_chater_large"
+channel_strength: 0.8
+seed: 42
+

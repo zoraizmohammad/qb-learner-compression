@@ -231,6 +231,9 @@ def build_evidence_channel(x: np.ndarray, strength: float = 0.4):
     This is a convenience wrapper around evidence_kraus() that matches
     the interface specified in the prompt.
     
+    Uses projective update channel which pushes toward |1⟩, creating
+    better separation between categories compared to amplitude damping.
+    
     Parameters
     ----------
     x : np.ndarray
@@ -243,7 +246,12 @@ def build_evidence_channel(x: np.ndarray, strength: float = 0.4):
     Kraus
         A Qiskit Kraus channel.
     """
-    return evidence_kraus(x, strength=strength)
+    # Use projective update instead of amplitude damping
+    # Projective update pushes toward |1⟩, which creates better separation
+    # High feature values → stronger push toward |1⟩ (category B)
+    # Low feature values → weaker push (category A stays closer to |0⟩)
+    from .channels import build_evidence_channel as build_channel
+    return build_channel(x, kind="projective", strength=strength, method="mean")
 
 
 def apply_evidence_channel(
