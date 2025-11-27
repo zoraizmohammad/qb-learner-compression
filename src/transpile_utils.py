@@ -26,7 +26,13 @@ from typing import Optional, Any, Dict, Tuple, Union
 from qiskit import QuantumCircuit
 from qiskit import transpile
 from qiskit.providers import Backend
-from qiskit.providers.fake_provider import FakeBackend
+
+# Try to import FakeBackend (may not be available in all Qiskit versions)
+try:
+    from qiskit.providers.fake_provider import FakeBackend
+except ImportError:
+    # FakeBackend might not be available, use Backend as fallback
+    FakeBackend = Backend
 
 
 # ============================================================================
@@ -536,7 +542,7 @@ def transpile_and_count_2q(
             print(f"Two-qubit gates (total): {n_2q}")
             print("=" * 60)
         
-        return transpiled, n_entangling  # Return entangling count (more meaningful)
+        return transpiled, n_2q  # Return total 2q count for backward compatibility
 
 
 # ============================================================================
