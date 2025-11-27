@@ -6,6 +6,15 @@ Compressed training script with structural pruning for the quantum Bayesian lear
 This script trains the learner with greedy pruning of entangling gates. It starts
 with all entanglers active, optimizes theta continuously, and periodically prunes
 entanglers that don't significantly impact the loss.
+
+Usage:
+    Run from repo root: python -m src.train_compressed
+    
+    Quick test (40 iterations):
+    python -m src.train_compressed --iterations 40
+    
+    Full training with custom parameters:
+    python -m src.train_compressed --iterations 100 --n_qubits 2 --depth 3 --prune_every 20 --tolerance 0.01
 """
 
 from __future__ import annotations
