@@ -5,12 +5,12 @@ Baseline training script for the quantum Bayesian learner.
 
 This script trains the learner with all entangling gates active (no compression).
 It optimizes only the continuous parameters theta while keeping the mask fixed
-at all 1s. Uses Adam optimizer or finite-difference gradient descent.
+at all 1s. Supports both Adam optimizer and finite-difference gradient descent.
 """
 
 from __future__ import annotations
 
-import os
+import argparse
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Optional
@@ -18,8 +18,91 @@ from pathlib import Path
 from tqdm import tqdm
 
 from .data import get_toy_dataset
-from .learner import forward_loss
+from .learner import forward_loss, compute_accuracy, predict_hard
+from .ansatz import (
+    get_default_pairs, build_parameter_shapes, init_random_theta,
+    init_full_mask, validate_theta_and_mask
+)
+from .plots import (
+    plot_all_curves_from_history, plot_pareto_from_runs, plot_pred_vs_true
+)
 
+
+# ============================================================================
+# Optimizer Classes
+# ============================================================================
+
+class AdamOptimizer:
+    """
+    Adam optimizer for parameter updates.
+    
+    Implements the Adam (Adaptive Moment Estimation) algorithm for
+    gradient-based optimization.
+    """
+    
+    def __init__(self, shape: tuple, lr: float = 0.01, beta1: float = 0.9, 
+                 beta2: float = 0.999, eps: float = 1e-8):
+        """
+        Initialize Adam optimizer.
+        
+        Parameters
+        ----------
+        shape : tuple
+            Shape of parameters to optimize.
+        lr : float, optional
+            Learning rate (default: 0.01).
+        beta1 : float, optional
+            Exponential decay rate for first moment (default: 0.9).
+        beta2 : float, optional
+            Exponential decay rate for second moment (default: 0.999).
+        eps : float, optional
+            Small constant for numerical stability (default: 1e-8).
+        """
+        self.lr = lr
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.eps = eps
+        self.m = np.zeros(shape, dtype=np.float64)  # First moment
+        self.v = np.zeros(shape, dtype=np.float64)  # Second moment
+        self.t = 0  # Time step
+    
+    def step(self, grad: np.ndarray) -> np.ndarray:
+        """
+        Perform one optimization step.
+        
+        Parameters
+        ----------
+        grad : np.ndarray
+            Gradient of the loss function.
+        
+        Returns
+        -------
+        np.ndarray
+            Parameter update (to be subtracted from current parameters).
+        """
+        self.t += 1
+        
+        # Update biased first moment estimate
+        self.m = self.beta1 * self.m + (1 - self.beta1) * grad
+        
+        # Update biased second raw moment estimate
+        self.v = self.beta2 * self.v + (1 - self.beta2) * (grad ** 2)
+        
+        # Compute bias-corrected first moment estimate
+        m_hat = self.m / (1 - self.beta1 ** self.t)
+        
+        # Compute bias-corrected second raw moment estimate
+        v_hat = self.v / (1 - self.beta2 ** self.t)
+        
+        # Compute parameter update
+        update = self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
+        
+        return update
+
+
+# ============================================================================
+# Utility Functions
+# ============================================================================
 
 def finite_diff_gradient(
     loss_fn,
@@ -76,16 +159,32 @@ def compute_ce_loss_only(
     
     This is used for logging purposes to track classification performance
     separately from the complexity penalty.
+    
+    Parameters
+    ----------
+    theta : np.ndarray
+        Parameter tensor.
+    mask : np.ndarray
+        Binary mask tensor.
+    X : np.ndarray
+        Training data.
+    y : np.ndarray
+        Training labels.
+    pairs : list
+        Qubit pairs for coupling map.
+    n_qubits : int
+        Number of qubits.
+    depth : int
+        Circuit depth.
+    channel_strength : float
+        Maximum strength for evidence channels.
+    
+    Returns
+    -------
+    float
+        Cross-entropy loss only.
     """
-    # Build ansatz and get two-qubit count (needed for forward_loss)
-    from .ansatz import build_ansatz
-    from .transpile_utils import transpile_and_count_2q
-    
-    ansatz = build_ansatz(n_qubits, depth, theta, mask, pairs)
-    _, twoq = transpile_and_count_2q(ansatz, backend=None)
-    
-    # Compute full loss
-    result = forward_loss(
+    loss_dict = forward_loss(
         theta=theta,
         mask=mask,
         X=X,
@@ -97,9 +196,107 @@ def compute_ce_loss_only(
         depth=depth,
         channel_strength=channel_strength,
     )
-    
-    return result['ce_loss']
+    return loss_dict["ce_loss"]
 
+
+def compute_accuracy_from_predictions(
+    preds: np.ndarray,
+    y: np.ndarray
+) -> float:
+    """
+    Compute classification accuracy from predictions.
+    
+    Parameters
+    ----------
+    preds : np.ndarray
+        Predicted probabilities (shape: (n_samples,)).
+    y : np.ndarray
+        True labels (shape: (n_samples,)).
+    
+    Returns
+    -------
+    float
+        Accuracy (between 0 and 1).
+    """
+    # Convert probabilities to hard predictions (threshold = 0.5)
+    hard_preds = (preds >= 0.5).astype(int)
+    return compute_accuracy(hard_preds, y)
+
+
+def validate_inputs(
+    X: np.ndarray,
+    y: np.ndarray,
+    n_qubits: int,
+    depth: int,
+    pairs: list
+) -> None:
+    """
+    Validate input shapes and values.
+    
+    Parameters
+    ----------
+    X : np.ndarray
+        Training data.
+    y : np.ndarray
+        Training labels.
+    n_qubits : int
+        Number of qubits.
+    depth : int
+        Circuit depth.
+    pairs : list
+        Qubit pairs.
+    
+    Raises
+    ------
+    ValueError
+        If shapes or values are invalid.
+    """
+    X = np.asarray(X)
+    y = np.asarray(y)
+    
+    # Check X shape
+    if X.ndim != 2:
+        raise ValueError(f"X must be 2D array (n_samples, n_features), got shape {X.shape}")
+    
+    n_samples, n_features = X.shape
+    
+    # Check y shape
+    if y.ndim != 1:
+        raise ValueError(f"y must be 1D array (n_samples,), got shape {y.shape}")
+    
+    if len(y) != n_samples:
+        raise ValueError(
+            f"X and y must have same number of samples: {n_samples} != {len(y)}"
+        )
+    
+    # Check y values
+    if not np.all(np.isin(y, [0, 1])):
+        raise ValueError("y must contain only 0 and 1 values")
+    
+    # Warn if dataset is very small
+    if n_samples < 5:
+        import warnings
+        warnings.warn(
+            f"Dataset is very small ({n_samples} samples). "
+            f"Results may not be reliable.",
+            UserWarning
+        )
+    
+    # Validate pairs
+    n_edges = len(pairs)
+    if n_edges == 0:
+        raise ValueError("pairs list cannot be empty")
+    
+    for i, j in pairs:
+        if i < 0 or i >= n_qubits or j < 0 or j >= n_qubits:
+            raise ValueError(
+                f"Invalid qubit pair ({i}, {j}) for n_qubits={n_qubits}"
+            )
+
+
+# ============================================================================
+# Main Training Function
+# ============================================================================
 
 def main(
     n_qubits: int = 2,
@@ -110,6 +307,9 @@ def main(
     seed: int = 42,
     dataset_name: str = "pothos_chater_small",
     channel_strength: float = 0.4,
+    optimizer_type: str = "finite_diff",
+    debug_predictions_every: Optional[int] = None,
+    output_dir: str = "results",
 ) -> Dict[str, Any]:
     """
     Main training function for baseline model.
@@ -132,46 +332,60 @@ def main(
         Name of dataset to use.
     channel_strength : float
         Maximum strength for evidence channels.
+    optimizer_type : str
+        Optimizer to use: "finite_diff" or "adam" (default: "finite_diff").
+    debug_predictions_every : int, optional
+        Print prediction debug info every N iterations (default: None).
+    output_dir : str
+        Output directory for results (default: "results").
+    
     Returns
     -------
     Dict[str, Any]
         Dictionary with training results:
         - theta: final parameters
         - loss: final loss value
+        - accuracy: final accuracy
         - two_qubit_count: final two-qubit gate count
         - history: DataFrame with training history
     """
     # Set random seed for reproducibility
     np.random.seed(seed)
     
-    # Create results directory if it doesn't exist
-    results_dir = Path("results")
+    # Create results directory structure
+    results_dir = Path(output_dir)
     results_dir.mkdir(exist_ok=True)
-    results_dir.joinpath("logs").mkdir(exist_ok=True)
-    results_dir.joinpath("figures").mkdir(exist_ok=True)
+    (results_dir / "logs").mkdir(exist_ok=True)
+    (results_dir / "figures").mkdir(exist_ok=True)
     
     # Load dataset
     X, y = get_toy_dataset(name=dataset_name)
     print(f"Loaded dataset: {X.shape[0]} samples, {X.shape[1]} features")
     
     # Set up coupling map (default: linear chain)
-    if n_qubits == 2:
-        pairs = [(0, 1)]
-    else:
-        pairs = [(i, i+1) for i in range(n_qubits - 1)]
-    
+    pairs = get_default_pairs(n_qubits)
     n_edges = len(pairs)
     
-    # Initialize parameters
-    # theta shape: (depth, max(n_qubits, n_edges), 5)
-    max_dim = max(n_qubits, n_edges)
-    theta = np.random.randn(depth, max_dim, 5) * 0.1  # Small random initialization
+    # Validate inputs
+    validate_inputs(X, y, n_qubits, depth, pairs)
     
-    # Initialize mask: all entanglers active
-    mask = np.ones((depth, n_edges), dtype=int)
+    # Initialize parameters
+    theta = init_random_theta(n_qubits, depth, n_edges, scale=0.1, seed=seed)
+    mask = init_full_mask(depth, n_edges)
+    
+    # Validate shapes
+    validate_theta_and_mask(theta, mask, n_qubits, n_edges, depth)
     
     print(f"Initialized parameters: theta shape {theta.shape}, mask shape {mask.shape}")
     print(f"Total trainable parameters: {np.prod(theta.shape)}")
+    
+    # Initialize optimizer
+    if optimizer_type.lower() == "adam":
+        optimizer = AdamOptimizer(theta.shape, lr=lr)
+        print(f"Using Adam optimizer (lr={lr})")
+    else:
+        optimizer = None
+        print(f"Using finite-difference gradient descent (lr={lr})")
     
     # Training history
     history = []
@@ -180,7 +394,7 @@ def main(
     def loss_fn(theta_flat: np.ndarray) -> float:
         """Loss function that takes flattened theta."""
         theta_reshaped = theta_flat.reshape(theta.shape)
-        loss, _ = forward_loss(
+        result = forward_loss(
             theta=theta_reshaped,
             mask=mask,
             X=X,
@@ -192,11 +406,10 @@ def main(
             depth=depth,
             channel_strength=channel_strength,
         )
-        return loss
+        return result["total_loss"]
     
     # Training loop
     print(f"\nStarting training ({n_iterations} iterations)...")
-    print(f"Using finite-difference gradient descent optimizer")
     
     for iteration in tqdm(range(n_iterations), desc="Training"):
         # Compute current loss and metrics
@@ -213,22 +426,41 @@ def main(
             channel_strength=channel_strength,
         )
         
-        total_loss = result['total_loss']
-        ce_loss = result['ce_loss']
-        twoq = result['two_q_cost']
+        total_loss = result["total_loss"]
+        ce_loss = result["ce_loss"]
+        twoq = result["two_q_cost"]
+        preds = result["preds"]
+        
+        # Compute accuracy
+        accuracy = compute_accuracy_from_predictions(preds, y)
+        
+        # Debug predictions if requested
+        if debug_predictions_every is not None and (iteration + 1) % debug_predictions_every == 0:
+            print(f"\n[Iteration {iteration+1}] Prediction Debug:")
+            print(f"  Predictions: {preds[:5]}... (showing first 5)")
+            print(f"  True labels: {y[:5]}")
+            print(f"  Accuracy: {accuracy:.4f}")
+            print(f"  CE loss: {ce_loss:.6f}")
         
         # Log metrics
         history.append({
             "iteration": iteration,
             "loss": total_loss,
             "ce_loss": ce_loss,
+            "accuracy": accuracy,
             "two_qubit_count": twoq,
         })
         
         # Compute gradient and update parameters
-        # Use finite-difference gradient descent (Adam requires maintaining state)
         grad = finite_diff_gradient(loss_fn, theta, h=1e-5)
-        theta = theta - lr * grad
+        
+        if optimizer is not None:
+            # Use Adam optimizer
+            update = optimizer.step(grad)
+            theta = theta - update
+        else:
+            # Use finite-difference gradient descent
+            theta = theta - lr * grad
     
     # Final evaluation
     print("\nComputing final metrics...")
@@ -244,44 +476,126 @@ def main(
         depth=depth,
         channel_strength=channel_strength,
     )
-    final_loss = final_result['total_loss']
-    final_twoq = final_result['two_q_cost']
-    ce_loss = final_result['ce_loss']
+    
+    final_loss = final_result["total_loss"]
+    final_ce_loss = final_result["ce_loss"]
+    final_twoq = final_result["two_q_cost"]
+    final_preds = final_result["preds"]
+    final_accuracy = compute_accuracy_from_predictions(final_preds, y)
+    
+    # Convert history to DataFrame
+    df_history = pd.DataFrame(history)
     
     # Save history to CSV
-    df_history = pd.DataFrame(history)
     log_path = results_dir / "logs" / "baseline_log.csv"
     df_history.to_csv(log_path, index=False)
     print(f"Saved training history to {log_path}")
+    
+    # Save final parameters
+    theta_path = results_dir / "baseline_final_theta.npy"
+    np.save(theta_path, theta)
+    print(f"Saved final theta to {theta_path}")
+    
+    # Generate plots
+    print("\nGenerating plots...")
+    plot_all_curves_from_history(
+        df_history.to_dict("list"),
+        prefix="baseline",
+        output_dir=str(results_dir / "figures"),
+        verbose=True
+    )
+    
+    # Plot Pareto front (if we have enough data)
+    if len(df_history) > 1:
+        plot_pareto_from_runs(
+            [{
+                "name": "baseline",
+                "acc": final_accuracy,
+                "cost": final_twoq,
+                "loss": final_loss
+            }],
+            output_dir=str(results_dir / "figures"),
+            fname="baseline_pareto",
+            verbose=True
+        )
+    
+    # Plot predictions vs true labels
+    plot_pred_vs_true(
+        final_preds,
+        y,
+        title="Baseline: Predicted vs True Labels",
+        fname="baseline_pred_vs_true",
+        output_dir=str(results_dir / "figures"),
+        verbose=True
+    )
     
     # Print summary
     print("\n" + "="*50)
     print("Training Summary")
     print("="*50)
     print(f"Final loss: {final_loss:.6f}")
+    print(f"Final CE loss: {final_ce_loss:.6f}")
+    print(f"Final accuracy: {final_accuracy:.4f}")
     print(f"Final two-qubit gate count: {final_twoq}")
-    print(f"Final CE loss: {ce_loss:.6f}")
     print(f"Total iterations: {n_iterations}")
     print("="*50)
     
     return {
         "theta": theta,
         "loss": float(final_loss),
+        "accuracy": float(final_accuracy),
         "two_qubit_count": int(final_twoq),
         "history": df_history,
     }
 
 
-if __name__ == "__main__":
-    # Run training with default parameters
-    results = main(
-        n_qubits=2,
-        depth=3,
-        n_iterations=50,  # Reduced for faster testing
-        lr=0.01,
-        lam=0.1,
-        seed=42,
-        dataset_name="pothos_chater_small",
-    )
-    print("\nTraining completed successfully!")
+# ============================================================================
+# CLI Interface
+# ============================================================================
 
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Train baseline quantum Bayesian learner"
+    )
+    parser.add_argument("--n_qubits", type=int, default=2,
+                       help="Number of qubits (default: 2)")
+    parser.add_argument("--depth", type=int, default=3,
+                       help="Circuit depth (default: 3)")
+    parser.add_argument("--iterations", type=int, default=100,
+                       help="Number of training iterations (default: 100)")
+    parser.add_argument("--lr", type=float, default=0.01,
+                       help="Learning rate (default: 0.01)")
+    parser.add_argument("--lam", type=float, default=0.1,
+                       help="Regularization strength (default: 0.1)")
+    parser.add_argument("--seed", type=int, default=42,
+                       help="Random seed (default: 42)")
+    parser.add_argument("--dataset", type=str, default="pothos_chater_small",
+                       choices=["pothos_chater_small", "pothos_chater_medium"],
+                       help="Dataset name (default: pothos_chater_small)")
+    parser.add_argument("--channel_strength", type=float, default=0.4,
+                       help="Evidence channel strength (default: 0.4)")
+    parser.add_argument("--optimizer", type=str, default="finite_diff",
+                       choices=["finite_diff", "adam"],
+                       help="Optimizer type (default: finite_diff)")
+    parser.add_argument("--debug_predictions_every", type=int, default=None,
+                       help="Debug predictions every N iterations (default: None)")
+    parser.add_argument("--output_dir", type=str, default="results",
+                       help="Output directory (default: results)")
+    
+    args = parser.parse_args()
+    
+    results = main(
+        n_qubits=args.n_qubits,
+        depth=args.depth,
+        n_iterations=args.iterations,
+        lr=args.lr,
+        lam=args.lam,
+        seed=args.seed,
+        dataset_name=args.dataset,
+        channel_strength=args.channel_strength,
+        optimizer_type=args.optimizer,
+        debug_predictions_every=args.debug_predictions_every,
+        output_dir=args.output_dir,
+    )
+    
+    print("\nTraining completed successfully!")
