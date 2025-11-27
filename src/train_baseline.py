@@ -6,6 +6,15 @@ Baseline training script for the quantum Bayesian learner.
 This script trains the learner with all entangling gates active (no compression).
 It optimizes only the continuous parameters theta while keeping the mask fixed
 at all 1s. Supports both Adam optimizer and finite-difference gradient descent.
+
+Usage:
+    Run from repo root: python -m src.train_baseline
+    
+    Quick test (20 iterations):
+    python -m src.train_baseline --iterations 20
+    
+    Full training with custom parameters:
+    python -m src.train_baseline --iterations 100 --n_qubits 2 --depth 3 --lr 0.01 --lam 0.1
 """
 
 from __future__ import annotations

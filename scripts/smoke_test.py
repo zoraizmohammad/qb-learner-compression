@@ -10,6 +10,10 @@ This script:
 4. Prints the circuit
 5. Calls forward_loss with a single sample
 6. Prints the returned loss and 2-qubit gate count
+
+Command to run: 
+cd /Users/mzoraiz/Desktop/qb-learner-compression && source venv/bin/activate && python scripts/smoke_test.py
+
 """
 
 from __future__ import annotations
