@@ -168,6 +168,8 @@ def compute_ce_loss_only(
     n_qubits: int,
     depth: int,
     channel_strength: float = 0.4,
+    readout_alpha: float = 4.0,
+    feature_scale: float = np.pi,
 ) -> float:
     """
     Compute only the cross-entropy loss (without regularization).
@@ -210,6 +212,8 @@ def compute_ce_loss_only(
         n_qubits=n_qubits,
         depth=depth,
         channel_strength=channel_strength,
+        readout_alpha=readout_alpha,
+        feature_scale=feature_scale,
     )
     return loss_dict["ce_loss"]
 
@@ -325,6 +329,8 @@ def main(
     optimizer_type: str = "finite_diff",
     debug_predictions_every: Optional[int] = None,
     output_dir: str = "results",
+    readout_alpha: float = 4.0,
+    feature_scale: float = np.pi,
 ) -> Dict[str, Any]:
     """
     Main training function for baseline model.
@@ -353,6 +359,12 @@ def main(
         Print prediction debug info every N iterations (default: None).
     output_dir : str
         Output directory for results (default: "results").
+    readout_alpha : float, optional
+        Temperature scaling factor for sigmoid readout (default: 4.0).
+        Higher values (3-5) provide stronger nonlinearity.
+    feature_scale : float, optional
+        Scaling factor for feature encoding rotations (default: π).
+        Features are multiplied by this before applying RY/RZ rotations.
     
     Returns
     -------
@@ -456,6 +468,8 @@ def main(
             n_qubits=n_qubits,
             depth=depth,
             channel_strength=channel_strength,
+            readout_alpha=readout_alpha,
+            feature_scale=feature_scale,
         )
         return result["total_loss"]
     
@@ -475,6 +489,8 @@ def main(
             n_qubits=n_qubits,
             depth=depth,
             channel_strength=channel_strength,
+            readout_alpha=readout_alpha,
+            feature_scale=feature_scale,
         )
         
         total_loss = result["total_loss"]
@@ -531,6 +547,8 @@ def main(
         n_qubits=n_qubits,
         depth=depth,
         channel_strength=channel_strength,
+        readout_alpha=readout_alpha,
+        feature_scale=feature_scale,
     )
     
     final_loss = final_result["total_loss"]

@@ -1,13 +1,13 @@
-experiment_name: "compressed_pothos_large"
+experiment_name: "compressed_pothos_large_v2"
 mode: "compressed"
 
 n_qubits: 2
 depth: 3
-n_iterations: 200
+n_iterations: 250
 lr: 0.05
 lam: 0.01
-prune_every: 120
-tolerance: 0.01
+prune_every: 150
+tolerance: 0.005
 dataset_name: "pothos_chater_large"
 channel_strength: 0.6
 seed: 42

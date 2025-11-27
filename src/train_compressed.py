@@ -394,6 +394,7 @@ def greedy_prune(
         channel_strength=channel_strength,
     )
     baseline_loss = baseline_result["total_loss"]
+    baseline_ce_loss = baseline_result["ce_loss"]  # Track CE loss separately
     
     n_pruned = 0
     mask_new = mask.copy()
@@ -420,9 +421,15 @@ def greedy_prune(
                     channel_strength=channel_strength,
                 )
                 test_loss = test_result["total_loss"]
+                test_ce_loss = test_result["ce_loss"]
                 
-                # If loss doesn't increase by more than tolerance, prune it
-                if test_loss <= baseline_loss + tolerance:
+                # Prune only if BOTH conditions are met:
+                # 1. Total loss doesn't increase by more than tolerance
+                # 2. CE loss doesn't increase by more than tolerance (prevents destroying accuracy)
+                loss_increase = test_loss - baseline_loss
+                ce_loss_increase = test_ce_loss - baseline_ce_loss
+                
+                if loss_increase <= tolerance and ce_loss_increase <= tolerance:
                     mask_new[d, k] = 0
                     n_pruned += 1
                     
@@ -441,8 +448,10 @@ def greedy_prune(
                             channel_strength=channel_strength,
                         )
                         baseline_loss = baseline_result["total_loss"]
+                        baseline_ce_loss = baseline_result["ce_loss"]
                     else:
                         baseline_loss = test_loss
+                        baseline_ce_loss = test_ce_loss
     
     # Ensure output is numpy int array
     mask_new = np.asarray(mask_new, dtype=int)

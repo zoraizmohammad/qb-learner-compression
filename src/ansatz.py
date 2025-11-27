@@ -377,6 +377,51 @@ def prune_pairs_for_backend(
         return pairs
 
 
+def hea_entangler_block(
+    qc: QuantumCircuit,
+    i: int,
+    j: int,
+    param: Union[float, Any]
+) -> None:
+    """
+    Add a Hardware-Efficient Ansatz (HEA) style entangling block.
+    
+    This implements the standard HEA entangling pattern: CX, RY, CX.
+    This creates stronger entanglement than a single CX gate and is
+    commonly used in VQE/VQA applications.
+    
+    Parameters
+    ----------
+    qc : QuantumCircuit
+        The circuit to add gates to (modified in-place).
+    i : int
+        First qubit index (control for first CX).
+    j : int
+        Second qubit index (target for first CX).
+    param : float or Parameter
+        Rotation angle for RY gate on qubit j.
+        Can be a float or Qiskit Parameter object.
+    
+    Returns
+    -------
+    None
+        Modifies the circuit in-place.
+    
+    Examples
+    --------
+    >>> from qiskit import QuantumCircuit
+    >>> import numpy as np
+    >>> 
+    >>> qc = QuantumCircuit(2)
+    >>> hea_entangler_block(qc, 0, 1, 0.5)
+    >>> print(qc)
+    """
+    # HEA pattern: CX, RY, CX
+    qc.cx(i, j)
+    qc.ry(param, j)
+    qc.cx(i, j)
+
+
 def heisenberg_entangler_block(
     qc: QuantumCircuit,
     i: int,
@@ -440,7 +485,8 @@ def build_ansatz(
     apply_initial_layout: bool = False,
     initial_layout: Optional[List[int]] = None,
     verbose: bool = False,
-    return_metadata: bool = False
+    return_metadata: bool = False,
+    entangler_type: str = "hea"
 ) -> Union[QuantumCircuit, Tuple[QuantumCircuit, Dict[str, Any]]]:
     """
     Build a layered variational ansatz with masked entangling gates.
@@ -487,6 +533,11 @@ def build_ansatz(
         If True, print debugging information (default: False).
     return_metadata : bool, optional
         If True, return additional metadata dictionary (default: False).
+    entangler_type : str, optional
+        Type of entangling block to use:
+        - "hea": Hardware-Efficient Ansatz style (CX, RY, CX) - default, stronger
+        - "heisenberg": Heisenberg interaction (RXX, RYY, RZZ) - original
+        (default: "hea").
     
     Returns
     -------
@@ -602,16 +653,29 @@ def build_ansatz(
                 mapped_i = qubit_map[i]
                 mapped_j = qubit_map[j]
                 
-                if use_parameters:
-                    heisenberg_params = [
-                        param_dict[(d, k, 2)],
-                        param_dict[(d, k, 3)],
-                        param_dict[(d, k, 4)]
-                    ]
+                if entangler_type.lower() == "hea":
+                    # HEA-style: CX, RY, CX (uses theta[d, k, 2] for RY angle)
+                    if use_parameters:
+                        ry_param = param_dict[(d, k, 2)]
+                    else:
+                        ry_param = theta[d, k, 2]
+                    hea_entangler_block(qc, mapped_i, mapped_j, ry_param)
+                elif entangler_type.lower() == "heisenberg":
+                    # Heisenberg: RXX, RYY, RZZ (uses theta[d, k, 2:5])
+                    if use_parameters:
+                        heisenberg_params = [
+                            param_dict[(d, k, 2)],
+                            param_dict[(d, k, 3)],
+                            param_dict[(d, k, 4)]
+                        ]
+                    else:
+                        heisenberg_params = theta[d, k, 2:5]  # [α, β, γ]
+                    heisenberg_entangler_block(qc, mapped_i, mapped_j, heisenberg_params)
                 else:
-                    heisenberg_params = theta[d, k, 2:5]  # [α, β, γ]
-                
-                heisenberg_entangler_block(qc, mapped_i, mapped_j, heisenberg_params)
+                    raise ValueError(
+                        f"Unknown entangler_type: {entangler_type}. "
+                        f"Must be 'hea' or 'heisenberg'"
+                    )
     
     # Build metadata if requested
     if return_metadata:

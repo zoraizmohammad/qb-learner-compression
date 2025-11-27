@@ -1,4 +1,4 @@
-experiment_name: "baseline_pothos_large"
+experiment_name: "baseline_pothos_large_fixed"
 mode: "baseline"
 
 n_qubits: 2
