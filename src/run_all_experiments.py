@@ -441,9 +441,14 @@ def aggregate_results(
     if len(df[df['mode'] == 'baseline']) > 0 and len(df[df['mode'] == 'compressed']) > 0:
         fig, axes = plt.subplots(1, 2, figsize=(14, 6))
         
-        # Average metrics by mode
-        baseline_avg = df[df['mode'] == 'baseline'].mean()
-        compressed_avg = df[df['mode'] == 'compressed'].mean()
+        # Average metrics by mode (only numeric columns)
+        baseline_df = df[df['mode'] == 'baseline']
+        compressed_df = df[df['mode'] == 'compressed']
+        
+        # Select only numeric columns for mean calculation
+        numeric_cols = baseline_df.select_dtypes(include=[np.number]).columns
+        baseline_avg = baseline_df[numeric_cols].mean()
+        compressed_avg = compressed_df[numeric_cols].mean()
         
         metrics = ['final_accuracy', 'two_qubit_count']
         metric_labels = ['Accuracy', '2Q Gate Count']
