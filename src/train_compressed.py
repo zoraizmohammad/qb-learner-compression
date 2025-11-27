@@ -28,6 +28,11 @@ from .plots import (
     plot_pareto_from_runs, plot_mask_heatmap, plot_mask_before_after,
     plot_pred_vs_true
 )
+from .logging_utils import (
+    timestamp_str, save_training_config, save_final_metrics,
+    save_training_history, save_parameters, save_loss_history,
+    save_mask_history
+)
 
 
 # ============================================================================
@@ -501,11 +506,44 @@ def main(
     # Set random seed for reproducibility
     np.random.seed(seed)
     
-    # Create results directory structure
-    results_dir = Path(output_dir)
+    # Create run directory with timestamp
+    timestamp = timestamp_str()
+    run_name = f"compressed_{timestamp}"
+    base_results_dir = Path(output_dir)
+    run_dir = base_results_dir / "runs" / run_name
+    
+    # Also create legacy directories for backward compatibility
+    results_dir = base_results_dir
     results_dir.mkdir(exist_ok=True)
     (results_dir / "logs").mkdir(exist_ok=True)
     (results_dir / "figures").mkdir(exist_ok=True)
+    
+    print(f"Run directory: {run_dir}")
+    
+    # Prepare config for saving
+    config = {
+        "experiment_name": run_name,
+        "mode": "compressed",
+        "training": {
+            "n_qubits": n_qubits,
+            "depth": depth,
+            "n_iterations": n_iterations,
+            "lr": lr,
+            "lam": lam,
+            "prune_every": prune_every,
+            "tolerance": tolerance,
+            "seed": seed,
+            "channel_strength": channel_strength,
+            "optimizer": optimizer_type,
+            "debug_predictions_every": debug_predictions_every,
+        },
+        "dataset": {
+            "name": dataset_name,
+        }
+    }
+    
+    # Save config
+    save_training_config(run_dir, config, verbose=True)
     
     # Load dataset
     X, y = get_toy_dataset(name=dataset_name)
@@ -542,6 +580,14 @@ def main(
     
     # Training history
     history = []
+    
+    # Arrays for loss history (for NPZ saving)
+    loss_history = []
+    ce_loss_history = []
+    gate_cost_history = []
+    
+    # Array for mask history (for compressed training)
+    mask_history = []
     
     # Define loss function for optimization
     def loss_fn(theta_flat: np.ndarray) -> float:
@@ -611,6 +657,14 @@ def main(
             "active_entanglers": int(np.sum(mask == 1)),
         })
         
+        # Store for loss history NPZ
+        loss_history.append(total_loss)
+        ce_loss_history.append(ce_loss)
+        gate_cost_history.append(twoq)
+        
+        # Store mask for mask history
+        mask_history.append(mask.copy())
+        
         # Update theta using gradient descent
         grad = finite_diff_gradient(loss_fn, theta, h=1e-5)
         
@@ -672,27 +726,72 @@ def main(
     # Convert history to DataFrame
     df_history = pd.DataFrame(history)
     
-    # Save history to CSV
+    # Save all outputs using logging utilities
+    print(f"\nSaving outputs to {run_dir}...")
+    
+    # Save training history CSV
+    save_training_history(run_dir, df_history, verbose=True)
+    
+    # Also save to legacy location for backward compatibility
     log_path = results_dir / "logs" / "compressed_log.csv"
     df_history.to_csv(log_path, index=False)
-    print(f"Saved training history to {log_path}")
     
     # Save final parameters
+    save_parameters(run_dir, theta, mask=mask, verbose=True)
+    
+    # Also save to legacy location
     final_params_path = results_dir / "compressed_final.npz"
     np.savez(
         final_params_path,
         theta=theta,
         mask=mask,
     )
-    print(f"Saved final parameters to {final_params_path}")
     
-    # Generate plots
+    # Save loss history
+    save_loss_history(
+        run_dir,
+        loss=np.array(loss_history),
+        ce_loss=np.array(ce_loss_history),
+        gate_cost=np.array(gate_cost_history),
+        verbose=True
+    )
+    
+    # Save mask history
+    mask_history_array = np.array(mask_history)  # Shape: (n_iterations, depth, n_edges)
+    save_mask_history(run_dir, mask_history_array, verbose=True)
+    
+    # Save final metrics
+    final_metrics = {
+        "final_loss": float(final_loss),
+        "final_ce_loss": float(final_ce_loss),
+        "final_accuracy": float(final_accuracy),
+        "final_two_qubit_count": int(final_twoq),
+        "final_mask_sparsity": float(final_sparsity),
+        "final_active_entanglers": int(np.sum(mask == 1)),
+        "total_entanglers": int(mask.size),
+        "n_iterations": n_iterations,
+        "n_qubits": n_qubits,
+        "depth": depth,
+    }
+    save_final_metrics(run_dir, final_metrics, verbose=True)
+    
+    # Generate plots (save to both run directory and legacy location)
     print("\nGenerating plots...")
+    
+    # Save to run directory
+    plot_all_curves_from_history(
+        df_history.to_dict("list"),
+        prefix="compressed",
+        output_dir=str(run_dir / "figures"),
+        verbose=True
+    )
+    
+    # Also save to legacy location
     plot_all_curves_from_history(
         df_history.to_dict("list"),
         prefix="compressed",
         output_dir=str(results_dir / "figures"),
-        verbose=True
+        verbose=False
     )
     
     # Plot mask visualizations
@@ -700,7 +799,7 @@ def main(
         mask,
         title="Final Pruned Mask",
         fname="compressed_mask_final",
-        output_dir=str(results_dir / "figures"),
+        output_dir=str(run_dir / "figures"),
         verbose=True
     )
     
@@ -708,7 +807,7 @@ def main(
         mask_initial,
         mask,
         fname="compressed_mask_before_after",
-        output_dir=str(results_dir / "figures"),
+        output_dir=str(run_dir / "figures"),
         title_before="Initial Mask (All Active)",
         title_after="Final Mask (Pruned)",
         verbose=True
@@ -723,7 +822,7 @@ def main(
                 "cost": final_twoq,
                 "loss": final_loss
             }],
-            output_dir=str(results_dir / "figures"),
+            output_dir=str(run_dir / "figures"),
             fname="compressed_pareto",
             verbose=True
         )
@@ -734,7 +833,7 @@ def main(
         y,
         title="Compressed: Predicted vs True Labels",
         fname="compressed_pred_vs_true",
-        output_dir=str(results_dir / "figures"),
+        output_dir=str(run_dir / "figures"),
         verbose=True
     )
     
@@ -742,6 +841,8 @@ def main(
     print("\n" + "="*50)
     print("Training Summary")
     print("="*50)
+    print(f"Run name: {run_name}")
+    print(f"Run directory: {run_dir}")
     print(f"Final loss: {final_loss:.6f}")
     print(f"Final CE loss: {final_ce_loss:.6f}")
     print(f"Final accuracy: {final_accuracy:.4f}")
@@ -765,6 +866,8 @@ def main(
         "accuracy": float(final_accuracy),
         "two_qubit_count": int(final_twoq),
         "history": df_history,
+        "run_name": run_name,
+        "run_dir": str(run_dir),
     }
 
 

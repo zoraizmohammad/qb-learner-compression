@@ -26,6 +26,10 @@ from .ansatz import (
 from .plots import (
     plot_all_curves_from_history, plot_pareto_from_runs, plot_pred_vs_true
 )
+from .logging_utils import (
+    timestamp_str, save_training_config, save_final_metrics,
+    save_training_history, save_parameters, save_loss_history
+)
 
 
 # ============================================================================
@@ -352,11 +356,42 @@ def main(
     # Set random seed for reproducibility
     np.random.seed(seed)
     
-    # Create results directory structure
-    results_dir = Path(output_dir)
+    # Create run directory with timestamp
+    timestamp = timestamp_str()
+    run_name = f"baseline_{timestamp}"
+    base_results_dir = Path(output_dir)
+    run_dir = base_results_dir / "runs" / run_name
+    
+    # Also create legacy directories for backward compatibility
+    results_dir = base_results_dir
     results_dir.mkdir(exist_ok=True)
     (results_dir / "logs").mkdir(exist_ok=True)
     (results_dir / "figures").mkdir(exist_ok=True)
+    
+    print(f"Run directory: {run_dir}")
+    
+    # Prepare config for saving
+    config = {
+        "experiment_name": run_name,
+        "mode": "baseline",
+        "training": {
+            "n_qubits": n_qubits,
+            "depth": depth,
+            "n_iterations": n_iterations,
+            "lr": lr,
+            "lam": lam,
+            "seed": seed,
+            "channel_strength": channel_strength,
+            "optimizer": optimizer_type,
+            "debug_predictions_every": debug_predictions_every,
+        },
+        "dataset": {
+            "name": dataset_name,
+        }
+    }
+    
+    # Save config
+    save_training_config(run_dir, config, verbose=True)
     
     # Load dataset
     X, y = get_toy_dataset(name=dataset_name)
@@ -389,6 +424,11 @@ def main(
     
     # Training history
     history = []
+    
+    # Arrays for loss history (for NPZ saving)
+    loss_history = []
+    ce_loss_history = []
+    gate_cost_history = []
     
     # Define loss function for optimization
     def loss_fn(theta_flat: np.ndarray) -> float:
@@ -451,6 +491,11 @@ def main(
             "two_qubit_count": twoq,
         })
         
+        # Store for loss history NPZ
+        loss_history.append(total_loss)
+        ce_loss_history.append(ce_loss)
+        gate_cost_history.append(twoq)
+        
         # Compute gradient and update parameters
         grad = finite_diff_gradient(loss_fn, theta, h=1e-5)
         
@@ -486,23 +531,61 @@ def main(
     # Convert history to DataFrame
     df_history = pd.DataFrame(history)
     
-    # Save history to CSV
+    # Save all outputs using logging utilities
+    print(f"\nSaving outputs to {run_dir}...")
+    
+    # Save training history CSV
+    save_training_history(run_dir, df_history, verbose=True)
+    
+    # Also save to legacy location for backward compatibility
     log_path = results_dir / "logs" / "baseline_log.csv"
     df_history.to_csv(log_path, index=False)
-    print(f"Saved training history to {log_path}")
     
     # Save final parameters
+    save_parameters(run_dir, theta, mask=None, verbose=True)
+    
+    # Also save to legacy location
     theta_path = results_dir / "baseline_final_theta.npy"
     np.save(theta_path, theta)
-    print(f"Saved final theta to {theta_path}")
     
-    # Generate plots
+    # Save loss history
+    save_loss_history(
+        run_dir,
+        loss=np.array(loss_history),
+        ce_loss=np.array(ce_loss_history),
+        gate_cost=np.array(gate_cost_history),
+        verbose=True
+    )
+    
+    # Save final metrics
+    final_metrics = {
+        "final_loss": float(final_loss),
+        "final_ce_loss": float(final_ce_loss),
+        "final_accuracy": float(final_accuracy),
+        "final_two_qubit_count": int(final_twoq),
+        "n_iterations": n_iterations,
+        "n_qubits": n_qubits,
+        "depth": depth,
+    }
+    save_final_metrics(run_dir, final_metrics, verbose=True)
+    
+    # Generate plots (save to both run directory and legacy location)
     print("\nGenerating plots...")
+    
+    # Save to run directory
+    plot_all_curves_from_history(
+        df_history.to_dict("list"),
+        prefix="baseline",
+        output_dir=str(run_dir / "figures"),
+        verbose=True
+    )
+    
+    # Also save to legacy location
     plot_all_curves_from_history(
         df_history.to_dict("list"),
         prefix="baseline",
         output_dir=str(results_dir / "figures"),
-        verbose=True
+        verbose=False
     )
     
     # Plot Pareto front (if we have enough data)
@@ -514,7 +597,7 @@ def main(
                 "cost": final_twoq,
                 "loss": final_loss
             }],
-            output_dir=str(results_dir / "figures"),
+            output_dir=str(run_dir / "figures"),
             fname="baseline_pareto",
             verbose=True
         )
@@ -525,7 +608,7 @@ def main(
         y,
         title="Baseline: Predicted vs True Labels",
         fname="baseline_pred_vs_true",
-        output_dir=str(results_dir / "figures"),
+        output_dir=str(run_dir / "figures"),
         verbose=True
     )
     
@@ -533,6 +616,8 @@ def main(
     print("\n" + "="*50)
     print("Training Summary")
     print("="*50)
+    print(f"Run name: {run_name}")
+    print(f"Run directory: {run_dir}")
     print(f"Final loss: {final_loss:.6f}")
     print(f"Final CE loss: {final_ce_loss:.6f}")
     print(f"Final accuracy: {final_accuracy:.4f}")
@@ -546,6 +631,8 @@ def main(
         "accuracy": float(final_accuracy),
         "two_qubit_count": int(final_twoq),
         "history": df_history,
+        "run_name": run_name,
+        "run_dir": str(run_dir),
     }
 
 
