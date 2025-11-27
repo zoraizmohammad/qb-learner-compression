@@ -15,6 +15,8 @@ Usage:
     
     Full training with custom parameters:
     python -m src.train_baseline --iterations 100 --n_qubits 2 --depth 3 --lr 0.01 --lam 0.1
+    source venv/bin/activate && python -m src.train_compressed --iterations 40
+    Command to run: cd /Users/mzoraiz/Desktop/qb-learner-compression && source venv/bin/activate && python src/train_baseline.py
 """
 
 from __future__ import annotations
