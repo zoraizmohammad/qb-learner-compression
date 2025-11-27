@@ -905,7 +905,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42,
                        help="Random seed (default: 42)")
     parser.add_argument("--dataset", type=str, default="pothos_chater_small",
-                       choices=["pothos_chater_small", "pothos_chater_medium"],
+                       choices=["pothos_chater_small", "pothos_chater_medium", "pothos_chater_large"],
                        help="Dataset name (default: pothos_chater_small)")
     parser.add_argument("--channel_strength", type=float, default=0.4,
                        help="Evidence channel strength (default: 0.4)")

@@ -90,7 +90,7 @@ def validate_config(config: Dict[str, Any]) -> None:
         )
     
     # Validate dataset name
-    valid_datasets = ["pothos_chater_small", "pothos_chater_medium"]
+    valid_datasets = ["pothos_chater_small", "pothos_chater_medium", "pothos_chater_large"]
     if config["dataset_name"] not in valid_datasets:
         raise ValueError(
             f"Invalid dataset_name: {config['dataset_name']}. "

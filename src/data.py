@@ -35,7 +35,7 @@ import numpy as np
 from typing import Tuple, Literal
 
 
-DatasetName = Literal["pothos_chater_small", "pothos_chater_medium"]
+DatasetName = Literal["pothos_chater_small", "pothos_chater_medium", "pothos_chater_large"]
 
 
 # ---------------------------------------------------------
@@ -115,6 +115,40 @@ def get_pothos_chater_medium() -> Tuple[np.ndarray, np.ndarray]:
 
 
 # ---------------------------------------------------------
+# 3) LARGE P&C DATASET (40 total points)
+# ---------------------------------------------------------
+
+def get_pothos_chater_large() -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Large dataset consistent with the P&C similarity
+    framework. Two Gaussian-like clusters are generated
+    around psychologically meaningful prototypes.
+
+    Twenty points per category.
+
+    Category A prototype: [0.23, 0.27]
+    Category B prototype: [0.77, 0.73]
+    Standard deviation: 0.11
+
+    Returns
+    -------
+    X : array, shape (40, 2)
+    y : array, shape (40,)
+    """
+
+    center_A = np.array([0.23, 0.27])
+    center_B = np.array([0.77, 0.73])
+
+    XA = _sample_cluster(center_A, n=20, std=0.11, seed=20)
+    XB = _sample_cluster(center_B, n=20, std=0.11, seed=21)
+
+    X = np.vstack([XA, XB])
+    y = np.array([0] * 20 + [1] * 20)
+
+    return X, y
+
+
+# ---------------------------------------------------------
 # Generic entry point
 # ---------------------------------------------------------
 
@@ -124,7 +158,7 @@ def get_toy_dataset(name: DatasetName = "pothos_chater_small") -> Tuple[np.ndarr
 
     Parameters
     ----------
-    name : {"pothos_chater_small", "pothos_chater_medium"}
+    name : {"pothos_chater_small", "pothos_chater_medium", "pothos_chater_large"}
 
     Returns
     -------
@@ -135,5 +169,7 @@ def get_toy_dataset(name: DatasetName = "pothos_chater_small") -> Tuple[np.ndarr
         return get_pothos_chater_small()
     elif name == "pothos_chater_medium":
         return get_pothos_chater_medium()
+    elif name == "pothos_chater_large":
+        return get_pothos_chater_large()
     else:
         raise ValueError(f"Unknown dataset name: {name}")
