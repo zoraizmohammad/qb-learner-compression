@@ -7,8 +7,20 @@ This script discovers all YAML configuration files in experiments/,
 runs training for each, organizes results, and generates comparison plots.
 
 Usage:
+    # Run all experiments
     python -m src.run_all_experiments
-    python src/run_all_experiments.py
+    
+    # Dry run (list configs without running)
+    python -m src.run_all_experiments --dry-run
+    
+    # Run only first 2 experiments
+    python -m src.run_all_experiments --limit 2
+    
+    # Add tag to output directory
+    python -m src.run_all_experiments --tag test_run
+    
+    # Skip failed experiments and continue
+    python -m src.run_all_experiments --skip_failed
 """
 
 from __future__ import annotations
@@ -34,7 +46,7 @@ except ImportError:
 
 from .train_baseline import main as run_baseline
 from .train_compressed import main as run_compressed
-from .plots import plot_pred_vs_true, plot_mask_heatmap
+from .plots import plot_pred_vs_true, plot_mask_heatmap, compare_methods_bar
 from .logging_utils import write_json, write_csv, timestamp_str
 
 
@@ -97,17 +109,20 @@ def discover_configs(experiments_dir: Path) -> List[Path]:
     Returns
     -------
     List[Path]
-        Sorted list of config file paths.
+        Sorted list of config file paths (without duplicates).
     """
     if not experiments_dir.exists():
         return []
     
-    configs = []
+    configs = set()
     for ext in ['.yaml', '.yml']:
-        configs.extend(experiments_dir.glob(f'*{ext}'))
-        configs.extend(experiments_dir.glob(f'**/*{ext}'))
+        # Find files directly in experiments_dir
+        configs.update(experiments_dir.glob(f'*{ext}'))
+        # Also find files in subdirectories (recursive)
+        configs.update(experiments_dir.glob(f'**/*{ext}'))
     
-    return sorted(configs)
+    # Remove duplicates and sort
+    return sorted(list(configs))
 
 
 def normalize_config(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -126,14 +141,23 @@ def normalize_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     normalized = {}
     
-    # Required fields
-    if 'experiment_name' not in config:
-        raise ValueError("Config missing required field: experiment_name")
-    normalized['experiment_name'] = config['experiment_name']
+    # Required fields - handle both "experiment_name" and "name"
+    if 'experiment_name' not in config and 'name' not in config:
+        raise ValueError("Config missing required field: experiment_name or name")
+    normalized['experiment_name'] = config.get('experiment_name') or config.get('name', 'unnamed_experiment')
     
+    # Handle mode - try to infer if missing
     if 'mode' not in config:
-        raise ValueError("Config missing required field: mode")
-    mode = config['mode'].lower()
+        # Try to infer from experiment name or default to baseline
+        exp_name_lower = normalized['experiment_name'].lower()
+        if 'compress' in exp_name_lower:
+            mode = 'compressed'
+        else:
+            mode = 'baseline'
+        warnings.warn(f"Config {normalized['experiment_name']} missing 'mode' field, defaulting to '{mode}'")
+    else:
+        mode = config['mode'].lower()
+    
     if mode not in ['baseline', 'compressed']:
         raise ValueError(f"Invalid mode: {mode}. Must be 'baseline' or 'compressed'")
     normalized['mode'] = mode
@@ -221,8 +245,9 @@ def run_single_experiment(
         print(f"Running experiment: {exp_name} ({mode})")
         print(f"{'='*60}")
     
-    # Create experiment-specific directory
-    exp_dir = base_output_dir / "experiments" / exp_name
+    # Create experiment-specific directory with timestamp to avoid overwriting
+    timestamp = timestamp_str()
+    exp_dir = base_output_dir / "experiments" / f"{exp_name}_{timestamp}"
     exp_dir.mkdir(parents=True, exist_ok=True)
     
     # Create subdirectories
@@ -270,6 +295,29 @@ def run_single_experiment(
             'final_accuracy': float(results.get('accuracy', np.nan)),
             'two_qubit_count': int(results.get('two_qubit_count', 0)),
         }
+        
+        # Try to get CE loss from training history or log files
+        try:
+            history = results.get('history', None)
+            if history is not None and hasattr(history, 'iloc'):
+                # DataFrame from results
+                if 'ce_loss' in history.columns and len(history) > 0:
+                    summary['final_ce_loss'] = float(history.iloc[-1]['ce_loss'])
+                else:
+                    summary['final_ce_loss'] = summary['final_loss']  # Fallback
+            else:
+                # Try to read from main log file (training scripts write to results/logs/)
+                log_path = Path("results") / "logs" / f"{mode}_log.csv"
+                if log_path.exists():
+                    df_log = pd.read_csv(log_path)
+                    if 'ce_loss' in df_log.columns and len(df_log) > 0:
+                        summary['final_ce_loss'] = float(df_log.iloc[-1]['ce_loss'])
+                    else:
+                        summary['final_ce_loss'] = summary['final_loss']
+                else:
+                    summary['final_ce_loss'] = summary['final_loss']  # Fallback
+        except Exception:
+            summary['final_ce_loss'] = summary['final_loss']  # Fallback
         
         # Add compressed-specific metrics
         if mode == 'compressed':
@@ -435,7 +483,38 @@ def aggregate_results(
         plt.close()
         print(f"Saved comparison plot to {comparison_path}")
     
-    # 3. Experiment table (already saved as CSV above)
+    # 3. Use compare_methods_bar to compare all experiments
+    if len(successful) > 0:
+        method_results = {}
+        for summary in successful:
+            exp_name = summary['experiment_name']
+            # Use accuracy if available, otherwise approximate from CE loss
+            if 'final_accuracy' in summary and not np.isnan(summary.get('final_accuracy', np.nan)):
+                acc = summary['final_accuracy']
+            elif 'final_ce_loss' in summary:
+                # Approximate: lower CE loss ≈ higher accuracy
+                ce_loss = summary['final_ce_loss']
+                acc = max(0.0, min(1.0, 1.0 - ce_loss))
+            else:
+                acc = 0.0
+            
+            method_results[exp_name] = {
+                'acc': acc,
+                'cost': summary.get('two_qubit_count', 0),
+            }
+        
+        if len(method_results) > 0:
+            try:
+                compare_methods_bar(
+                    method_results,
+                    fname='experiment_methods_comparison',
+                    output_dir=str(summary_dir),
+                    verbose=True,
+                )
+            except Exception as e:
+                warnings.warn(f"Could not generate methods comparison bar chart: {e}")
+    
+    # 4. Experiment table (already saved as CSV above)
     print(f"Saved experiment table to {csv_path}")
 
 
@@ -446,7 +525,22 @@ def aggregate_results(
 def main() -> None:
     """Main entry point for experiment suite runner."""
     parser = argparse.ArgumentParser(
-        description="Run all experiments from YAML configs in experiments/ directory"
+        description="Run all experiments from YAML configs in experiments/ directory",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    # Run all experiments
+    python -m src.run_all_experiments
+    
+    # Dry run (list configs without running)
+    python -m src.run_all_experiments --dry-run
+    
+    # Run only first 2 experiments
+    python -m src.run_all_experiments --limit 2
+    
+    # Add tag to output directory
+    python -m src.run_all_experiments --tag test_run
+        """
     )
     parser.add_argument(
         '--experiments_dir',
@@ -471,6 +565,23 @@ def main() -> None:
         default=True,
         help='Print detailed progress (default: True)'
     )
+    parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='List which configs would run without actually running them'
+    )
+    parser.add_argument(
+        '--limit',
+        type=int,
+        default=None,
+        help='Run only first N experiments (default: all)'
+    )
+    parser.add_argument(
+        '--tag',
+        type=str,
+        default=None,
+        help='Append tag to output directory name (default: timestamp only)'
+    )
     
     args = parser.parse_args()
     
@@ -487,25 +598,84 @@ def main() -> None:
         print(f"No YAML configs found in {experiments_dir}")
         return
     
+    # Apply limit if specified
+    if args.limit is not None:
+        config_paths = config_paths[:args.limit]
+    
     print("=" * 60)
     print("Experiment Suite Runner")
     print("=" * 60)
     print(f"Found {len(config_paths)} experiment config(s)")
     print(f"Experiments directory: {experiments_dir}")
-    print(f"Output directory: {args.output_dir}")
+    
+    # Build output directory with tag if provided
+    base_output_dir = Path(args.output_dir)
+    if args.tag:
+        timestamp = timestamp_str()
+        base_output_dir = base_output_dir / f"experiments_{args.tag}_{timestamp}"
+    print(f"Output directory: {base_output_dir}")
     print()
     
+    # Dry run mode
+    if args.dry_run:
+        print("DRY RUN MODE - No experiments will be executed")
+        print("-" * 60)
+        for i, config_path in enumerate(config_paths, 1):
+            print(f"[{i}] {config_path.name}")
+            try:
+                raw_config = load_yaml(config_path)
+                config = normalize_config(raw_config)
+                print(f"     Experiment: {config['experiment_name']}")
+                print(f"     Mode: {config['mode']}")
+                print(f"     n_qubits: {config['n_qubits']}, depth: {config['depth']}")
+                print(f"     iterations: {config['n_iterations']}")
+            except Exception as e:
+                print(f"     ⚠ Warning: Could not parse config - {str(e)}")
+        print("-" * 60)
+        print(f"Would run {len(config_paths)} experiment(s)")
+        return
+    
     # Process each config
-    base_output_dir = Path(args.output_dir)
     all_summaries = []
     
     for i, config_path in enumerate(config_paths, 1):
         print(f"\n[{i}/{len(config_paths)}] Processing: {config_path.name}")
         
         try:
-            # Load and normalize config
-            raw_config = load_yaml(config_path)
-            config = normalize_config(raw_config)
+            # Load and normalize config with improved error handling
+            try:
+                raw_config = load_yaml(config_path)
+            except Exception as e:
+                if HAS_YAML and isinstance(e, yaml.YAMLError):
+                    error_msg = f"Malformed YAML in {config_path.name}: {str(e)}"
+                else:
+                    error_msg = f"Error loading {config_path.name}: {str(e)}"
+                error_msg = f"Malformed YAML in {config_path.name}: {str(e)}"
+                print(f"✗ {error_msg}")
+                if args.skip_failed:
+                    all_summaries.append({
+                        'experiment_name': config_path.stem,
+                        'status': 'failed',
+                        'error': f"YAML parse error: {str(e)}",
+                    })
+                    continue
+                else:
+                    raise
+            
+            try:
+                config = normalize_config(raw_config)
+            except (ValueError, KeyError) as e:
+                error_msg = f"Invalid config structure in {config_path.name}: {str(e)}"
+                print(f"✗ {error_msg}")
+                if args.skip_failed:
+                    all_summaries.append({
+                        'experiment_name': config_path.stem,
+                        'status': 'failed',
+                        'error': f"Config validation error: {str(e)}",
+                    })
+                    continue
+                else:
+                    raise
             
             # Run experiment
             summary, results = run_single_experiment(
@@ -520,10 +690,11 @@ def main() -> None:
             error_msg = f"Failed to process {config_path.name}: {str(e)}"
             print(f"✗ {error_msg}")
             
-            if not args.skip_failed:
+            if args.verbose:
                 traceback.print_exc()
-                if args.verbose:
-                    print("\nStopping due to error. Use --skip_failed to continue.")
+            
+            if not args.skip_failed:
+                print("\nStopping due to error. Use --skip-failed to continue.")
                 break
             
             # Add error summary
@@ -542,9 +713,19 @@ def main() -> None:
         summary_dir = base_output_dir / "summary"
         aggregate_results(all_summaries, summary_dir)
         
+        # Also save summary CSV to results/logs/experiment_summary.csv
+        logs_dir = Path(args.output_dir) / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        summary_csv_path = logs_dir / "experiment_summary.csv"
+        
+        df = pd.DataFrame(all_summaries)
+        df.to_csv(summary_csv_path, index=False)
+        print(f"Saved summary CSV to: {summary_csv_path}")
+        
         print("\n" + "=" * 60)
         print("All experiments completed.")
         print(f"Summary saved to: {summary_dir}")
+        print(f"Summary CSV: {summary_csv_path}")
         print("=" * 60)
     else:
         print("\nNo experiments completed successfully.")
