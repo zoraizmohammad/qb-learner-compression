@@ -85,7 +85,7 @@ def compute_ce_loss_only(
     _, twoq = transpile_and_count_2q(ansatz, backend=None)
     
     # Compute full loss
-    total_loss, _ = forward_loss(
+    result = forward_loss(
         theta=theta,
         mask=mask,
         X=X,
@@ -98,7 +98,7 @@ def compute_ce_loss_only(
         channel_strength=channel_strength,
     )
     
-    return total_loss
+    return result['ce_loss']
 
 
 def main(
@@ -200,7 +200,7 @@ def main(
     
     for iteration in tqdm(range(n_iterations), desc="Training"):
         # Compute current loss and metrics
-        total_loss, twoq = forward_loss(
+        result = forward_loss(
             theta=theta,
             mask=mask,
             X=X,
@@ -213,17 +213,9 @@ def main(
             channel_strength=channel_strength,
         )
         
-        # Compute CE loss only (for logging)
-        ce_loss = compute_ce_loss_only(
-            theta=theta,
-            mask=mask,
-            X=X,
-            y=y,
-            pairs=pairs,
-            n_qubits=n_qubits,
-            depth=depth,
-            channel_strength=channel_strength,
-        )
+        total_loss = result['total_loss']
+        ce_loss = result['ce_loss']
+        twoq = result['two_q_cost']
         
         # Log metrics
         history.append({
@@ -240,7 +232,7 @@ def main(
     
     # Final evaluation
     print("\nComputing final metrics...")
-    final_loss, final_twoq = forward_loss(
+    final_result = forward_loss(
         theta=theta,
         mask=mask,
         X=X,
@@ -252,6 +244,9 @@ def main(
         depth=depth,
         channel_strength=channel_strength,
     )
+    final_loss = final_result['total_loss']
+    final_twoq = final_result['two_q_cost']
+    ce_loss = final_result['ce_loss']
     
     # Save history to CSV
     df_history = pd.DataFrame(history)

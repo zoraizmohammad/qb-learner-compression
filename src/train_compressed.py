@@ -74,7 +74,7 @@ def compute_ce_loss_only(
     """
     Compute only the cross-entropy loss (without regularization).
     """
-    total_loss, _ = forward_loss(
+    result = forward_loss(
         theta=theta,
         mask=mask,
         X=X,
@@ -86,7 +86,7 @@ def compute_ce_loss_only(
         depth=depth,
         channel_strength=channel_strength,
     )
-    return total_loss
+    return result['ce_loss']
 
 
 def compute_mask_sparsity(mask: np.ndarray) -> float:
@@ -153,7 +153,7 @@ def greedy_prune(
         (updated_mask, number_of_pruned_gates)
     """
     # Compute baseline loss
-    baseline_loss, _ = forward_loss(
+    baseline_result = forward_loss(
         theta=theta,
         mask=mask,
         X=X,
@@ -165,6 +165,7 @@ def greedy_prune(
         depth=depth,
         channel_strength=channel_strength,
     )
+    baseline_loss = baseline_result['total_loss']
     
     n_pruned = 0
     mask_new = mask.copy()
@@ -178,7 +179,7 @@ def greedy_prune(
                 mask_test[d, k] = 0
                 
                 # Compute loss with this gate disabled
-                test_loss, _ = forward_loss(
+                test_result = forward_loss(
                     theta=theta,
                     mask=mask_test,
                     X=X,
@@ -190,6 +191,7 @@ def greedy_prune(
                     depth=depth,
                     channel_strength=channel_strength,
                 )
+                test_loss = test_result['total_loss']
                 
                 # If loss doesn't increase by more than tolerance, prune it
                 if test_loss <= baseline_loss + tolerance:
@@ -309,7 +311,7 @@ def main(
     
     for iteration in tqdm(range(n_iterations), desc="Training"):
         # Compute current loss and metrics
-        total_loss, twoq = forward_loss(
+        result = forward_loss(
             theta=theta,
             mask=mask,
             X=X,
@@ -322,17 +324,9 @@ def main(
             channel_strength=channel_strength,
         )
         
-        # Compute CE loss only (for logging)
-        ce_loss = compute_ce_loss_only(
-            theta=theta,
-            mask=mask,
-            X=X,
-            y=y,
-            pairs=pairs,
-            n_qubits=n_qubits,
-            depth=depth,
-            channel_strength=channel_strength,
-        )
+        total_loss = result['total_loss']
+        ce_loss = result['ce_loss']
+        twoq = result['two_q_cost']
         
         # Compute mask sparsity
         sparsity = compute_mask_sparsity(mask)
@@ -375,7 +369,7 @@ def main(
     
     # Final evaluation
     print("\nComputing final metrics...")
-    final_loss, final_twoq = forward_loss(
+    final_result = forward_loss(
         theta=theta,
         mask=mask,
         X=X,
@@ -388,16 +382,9 @@ def main(
         channel_strength=channel_strength,
     )
     
-    final_ce_loss = compute_ce_loss_only(
-        theta=theta,
-        mask=mask,
-        X=X,
-        y=y,
-        pairs=pairs,
-        n_qubits=n_qubits,
-        depth=depth,
-        channel_strength=channel_strength,
-    )
+    final_loss = final_result['total_loss']
+    final_twoq = final_result['two_q_cost']
+    final_ce_loss = final_result['ce_loss']
     
     final_sparsity = compute_mask_sparsity(mask)
     
