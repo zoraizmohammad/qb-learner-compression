@@ -1,13 +1,14 @@
-experiment_name: "baseline_pothos_large_fixed"
-mode: "baseline"
+experiment_name: "compressed_pothos_large_lam0.2"
+mode: "compressed"
 
 n_qubits: 2
 depth: 3
 n_iterations: 150
 lr: 0.05
-lam: 0.01
+lam: 0.2
+prune_every: 30
+tolerance: 0.05
 dataset_name: "pothos_chater_large"
 channel_strength: 0.6
 seed: 42
-
 

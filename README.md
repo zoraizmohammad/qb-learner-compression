@@ -1158,12 +1158,7 @@ Cognitive Psychology, 45, 45–85.
 
 ---
 
-## License
-
-[Add your license information here]
-
----
-
 ## Contact
 
-[Add your contact information here]
+Mohammad Zoraiz 
+mz248@duke.edu
