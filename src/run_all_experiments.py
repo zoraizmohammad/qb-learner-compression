@@ -270,6 +270,14 @@ def run_single_experiment(
         'output_dir': str(exp_dir),
     }
     
+    # Log config validation for debugging
+    if verbose:
+        print(f"Config validation:")
+        print(f"  n_iterations: {config.get('n_iterations')} -> {train_kwargs['n_iterations']}")
+        print(f"  lr: {config.get('lr')} -> {train_kwargs['lr']}")
+        print(f"  lam: {config.get('lam')} -> {train_kwargs['lam']}")
+        print(f"  dataset: {config.get('dataset_name')} -> {train_kwargs['dataset_name']}")
+    
     # Add compressed-specific args
     if mode == 'compressed':
         train_kwargs['prune_every'] = config['prune_every']

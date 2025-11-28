@@ -130,7 +130,7 @@ def finite_diff_gradient(
     Parameters
     ----------
     loss_fn : callable
-        Function that returns loss given theta.
+        Function that returns loss given theta (expects flattened array).
     theta : np.ndarray
         Current parameters.
     h : float
@@ -142,18 +142,19 @@ def finite_diff_gradient(
         Gradient estimate.
     """
     grad = np.zeros_like(theta)
-    loss_base = loss_fn(theta)
     
-    # Flatten for iteration
+    # Flatten for iteration - loss_fn expects flattened array
     theta_flat = theta.flatten()
     grad_flat = grad.flatten()
+    
+    # Compute base loss with flattened theta
+    loss_base = loss_fn(theta_flat)
     
     for i in range(len(theta_flat)):
         theta_perturbed = theta_flat.copy()
         theta_perturbed[i] += h
-        theta_pert = theta_perturbed.reshape(theta.shape)
-        
-        loss_pert = loss_fn(theta_pert)
+        # Pass flattened array directly - loss_fn will reshape internally
+        loss_pert = loss_fn(theta_perturbed)
         grad_flat[i] = (loss_pert - loss_base) / h
     
     return grad_flat.reshape(theta.shape)
@@ -437,6 +438,10 @@ def main(
     print(f"Initialized parameters: theta shape {theta.shape}, mask shape {mask.shape}")
     print(f"Total trainable parameters: {np.prod(theta.shape)}")
     
+    # Store initial theta norm for comparison
+    theta_init_norm = np.linalg.norm(theta)
+    print(f"Initial theta norm: {theta_init_norm:.6f}")
+    
     # Initialize optimizer
     if optimizer_type.lower() == "adam":
         optimizer = AdamOptimizer(theta.shape, lr=lr)
@@ -503,11 +508,21 @@ def main(
         
         # Debug predictions if requested
         if debug_predictions_every is not None and (iteration + 1) % debug_predictions_every == 0:
+            hard_preds = (preds >= 0.5).astype(int)
             print(f"\n[Iteration {iteration+1}] Prediction Debug:")
-            print(f"  Predictions: {preds[:5]}... (showing first 5)")
-            print(f"  True labels: {y[:5]}")
+            print(f"  Predictions (probs): {preds[:10]}... (showing first 10)")
+            print(f"  Hard predictions: {hard_preds[:10]}")
+            print(f"  True labels: {y[:10]}")
             print(f"  Accuracy: {accuracy:.4f}")
             print(f"  CE loss: {ce_loss:.6f}")
+            print(f"  Avg prediction: {np.mean(preds):.4f}")
+            # Check for sign flip: if accuracy is very low, predictions might be inverted
+            if accuracy < 0.3:
+                inverted_preds = 1 - hard_preds
+                inverted_acc = compute_accuracy(inverted_preds, y)
+                print(f"  ⚠️  Low accuracy detected! Inverted accuracy: {inverted_acc:.4f}")
+                if inverted_acc > 0.7:
+                    print(f"  ⚠️  WARNING: Predictions appear to be inverted! Consider flipping sign in prediction logic.")
         
         # Log metrics
         history.append({
@@ -525,6 +540,8 @@ def main(
         
         # Compute gradient and update parameters
         grad = finite_diff_gradient(loss_fn, theta, h=1e-5)
+        grad_norm = np.linalg.norm(grad)
+        theta_norm_before = np.linalg.norm(theta)
         
         if optimizer is not None:
             # Use Adam optimizer
@@ -533,6 +550,17 @@ def main(
         else:
             # Use finite-difference gradient descent
             theta = theta - lr * grad
+        
+        theta_norm_after = np.linalg.norm(theta)
+        theta_change = theta_norm_after - theta_norm_before
+        
+        # Log parameter update info every 10 iterations or first/last iteration
+        if iteration == 0 or iteration == n_iterations - 1 or (iteration + 1) % 10 == 0:
+            print(f"\n[Iteration {iteration+1}] Parameter Update:")
+            print(f"  Theta norm: {theta_norm_before:.6f} -> {theta_norm_after:.6f} (change: {theta_change:.6f})")
+            print(f"  Gradient norm: {grad_norm:.6f}")
+            if grad_norm < 1e-8:
+                print(f"  ⚠️  WARNING: Gradient norm is very small! Parameters may not be updating.")
     
     # Final evaluation
     print("\nComputing final metrics...")

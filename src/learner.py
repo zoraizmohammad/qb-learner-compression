@@ -239,7 +239,7 @@ def build_evidence_channel(x: np.ndarray, strength: float = 0.4):
     x : np.ndarray
         Stimulus features (1D array).
     strength : float, optional
-        Maximum channel strength (default: 0.4).
+        Maximum channel strength (default: 0.1).
     
     Returns
     -------
@@ -277,7 +277,7 @@ def apply_evidence_channel(
     x : np.ndarray
         Stimulus features (1D array).
     strength : float, optional
-        Maximum channel strength (default: 0.4).
+        Maximum channel strength (default: 0.1).
     qargs : List[int], optional
         List of qubit indices to apply the channel to. For single-qubit channels,
         this should be a list with one element. If None, defaults to [0] for
@@ -317,9 +317,16 @@ def apply_evidence_channel(
     if qargs is None or len(qargs) == 0:
         # Single-qubit state: apply directly
         new_rho = apply_channel_to_density_matrix(rho, channel)
-    else:
-        # Multi-qubit state: apply to specified qubits
+    elif len(qargs) == 1:
+        # Single qubit: apply directly using evolve
         new_rho = rho.evolve(channel, qargs=qargs)
+    else:
+        # Multiple qubits: apply channel to each qubit individually
+        # This is necessary because the channel is single-qubit (2x2 operators)
+        # and Qiskit's evolve() expects matching dimensions when qargs has multiple qubits
+        new_rho = rho
+        for qubit in qargs:
+            new_rho = new_rho.evolve(channel, qargs=[qubit])
     
     # Normalize for safety (should already be normalized, but ensure trace ≈ 1)
     trace = np.trace(new_rho.data)
@@ -351,7 +358,7 @@ def apply_evidence_channel(
 # Prediction Utilities
 # ============================================================================
 
-def predict_proba(rho: DensityMatrix, readout_alpha: float = 4.0) -> float:
+def predict_proba(rho: DensityMatrix, readout_alpha: float = 2.0) -> float:
     """
     Predict the probability of class 1 from the quantum state.
     
@@ -363,7 +370,7 @@ def predict_proba(rho: DensityMatrix, readout_alpha: float = 4.0) -> float:
     rho : DensityMatrix
         The quantum state (density matrix) to make a prediction from.
     readout_alpha : float, optional
-        Temperature scaling factor for sigmoid (default: 4.0).
+        Temperature scaling factor for sigmoid (default: 2.0).
     
     Returns
     -------
@@ -380,80 +387,49 @@ def predict_proba(rho: DensityMatrix, readout_alpha: float = 4.0) -> float:
     return predict_label(rho, readout_alpha=readout_alpha)
 
 
-def predict_label(rho: DensityMatrix, readout_alpha: float = 4.0) -> float:
+def predict_label(rho, readout_alpha=2.0, use_multi_qubit=True):
     """
-    Predict the class label from the quantum state using temperature-scaled sigmoid.
-    
-    Instead of linear mapping p = (expectation_Z + 1)/2, we use a temperature-scaled
-    sigmoid: logit = alpha * expectation_Z0, p = 1 / (1 + exp(-logit)).
-    
-    This provides stronger nonlinearity and better separation between classes,
-    typically improving accuracy from ~0.5 to ~0.8+.
-    
-    Parameters
-    ----------
-    rho : DensityMatrix
-        The quantum state (density matrix) to make a prediction from.
-    readout_alpha : float, optional
-        Temperature scaling factor for sigmoid (default: 4.0).
-        Higher values (3-5) provide stronger nonlinearity.
-    
-    Returns
-    -------
-    float
-        Probability of class 1 (between 0 and 1).
-    
-    Notes
-    -----
-    This computes the expectation value of Z on qubit 0:
-        expectation_Z0 = Tr(ρ * Z_0 ⊗ I_rest)
-    
-    Then applies a temperature-scaled sigmoid:
-        logit = alpha * expectation_Z0
-        p = 1 / (1 + exp(-logit))
-    
-    For multi-qubit states, we compute the reduced density matrix of the first qubit
-    by tracing out all other qubits, then compute the Z expectation value.
-    
-    Examples
-    --------
-    >>> from qiskit.quantum_info import DensityMatrix
-    >>> rho = DensityMatrix([[0.5, 0.0], [0.0, 0.5]])
-    >>> prob = predict_label(rho)
-    >>> print(prob)  # ~0.5 (maximally mixed state)
+    Improved classification readout using Z expectations on all qubits.
+    More stable than single-qubit readout and works well even when
+    compressed circuits remove entanglers.
     """
-    # Get the full density matrix
+
     full_rho = rho.data
-    
-    # For multi-qubit states, we need to trace out all qubits except the first
     n_qubits = int(np.log2(full_rho.shape[0]))
-    
-    if n_qubits == 1:
-        # Single qubit case: compute reduced density matrix directly
-        reduced = full_rho
+
+    # Pauli Z and X operators
+    Z = np.array([[1, 0], [0, -1]], dtype=complex)
+    X = np.array([[0, 1], [1, 0]], dtype=complex)
+
+    # Helper: compute expectation <P_i> for qubit i
+    def expval(P, i):
+        # Build full operator: I ⊗ ... ⊗ P (at pos i) ⊗ ... I
+        op = 1
+        for q in range(n_qubits):
+            op = np.kron(op, P if q == i else np.eye(2))
+        return float(np.real(np.trace(full_rho @ op)))
+
+    # ------------- NEW FEATURE VECTORS FOR CLASSIFICATION -------------
+    # Feature 1: Z on qubit 0
+    ez0 = expval(Z, 0)
+
+    if use_multi_qubit:
+        ez1 = expval(Z, 1) if n_qubits > 1 else 0.0
+        ex0 = expval(X, 0)
+        ex1 = expval(X, 1) if n_qubits > 1 else 0.0
+
+        # Combine features linearly (learnable bias optional)
+        logit = (
+            readout_alpha * (0.6 * ez0 + 0.4 * ez1 + 0.3 * ex0 + 0.2 * ex1)
+        )
     else:
-        # Multi-qubit case: trace out qubits 1 through n_qubits-1
-        # Reshape to separate first qubit from the rest: (2, 2^(n-1), 2, 2^(n-1))
-        dim_first = 2
-        dim_rest = 2 ** (n_qubits - 1)
-        reshaped = full_rho.reshape(dim_first, dim_rest, dim_first, dim_rest)
-        
-        # Trace over the remaining qubits (partial trace)
-        reduced = np.trace(reshaped, axis1=1, axis2=3)
-    
-    # Compute expectation value of Z on qubit 0
-    # Z = [[1, 0], [0, -1]]
-    # expectation_Z = Tr(ρ_reduced * Z) = ρ[0,0] - ρ[1,1] = 1 - 2*p1
-    # where p1 = ρ[1,1] is the probability of |1⟩
-    p1_linear = np.real(reduced[1, 1])
-    expectation_Z0 = 1.0 - 2.0 * p1_linear  # Maps to [-1, 1]
-    
-    # Apply temperature-scaled sigmoid
-    logit = readout_alpha * expectation_Z0
-    p = 1.0 / (1.0 + np.exp(-logit))
-    
-    # Clamp to [0, 1] for safety
-    return np.clip(p, 0.0, 1.0)
+        # Fall back to your old method
+        logit = readout_alpha * ez0
+
+    # Apply sigmoid
+    p = 1 / (1 + np.exp(-logit))
+    return float(np.clip(p, 0.0, 1.0))
+
 
 
 def predict_hard(rho: DensityMatrix, threshold: float = 0.5) -> int:
@@ -606,7 +582,7 @@ def init_belief(n_qubits: int) -> DensityMatrix:
     Returns
     -------
     DensityMatrix
-        Initial state with bias toward |0...0⟩: 0.6|0...0⟩⟨0...0| + 0.4*I/dim
+        Initial state with bias toward |0...0⟩: 0.55|0...0⟩⟨0...0| + 0.45*I/dim
     
     Examples
     --------
@@ -617,11 +593,12 @@ def init_belief(n_qubits: int) -> DensityMatrix:
     
     # Start with |0...0⟩ state (all zeros) with some mixing
     # This breaks the symmetry and allows learning
+    # Reduced bias from 0.6 to 0.55 to make ansatz more effective
     rho = np.zeros((dim, dim), dtype=complex)
-    rho[0, 0] = 0.6  # Bias toward |0...0⟩
+    rho[0, 0] = 0.55  # Bias toward |0...0⟩ (reduced from 0.6)
     
-    # Add small uniform mixing for numerical stability
-    uniform_component = 0.4 / dim
+    # Add uniform mixing for numerical stability and learnability
+    uniform_component = 0.45 / dim  # Increased from 0.4
     rho += uniform_component * np.eye(dim, dtype=complex)
     
     return DensityMatrix(rho)
@@ -645,11 +622,11 @@ def forward_loss(
     backend: Optional[Any] = None,
     n_qubits: int = 2,
     depth: int = 3,
-    channel_strength: float = 0.4,
+    channel_strength: float = 0.1,
     use_cached_ansatz: bool = True,
     qargs: Optional[List[int]] = None,
-    readout_alpha: float = 4.0,
-    feature_scale: float = np.pi,
+    readout_alpha: float = 2.0,
+    feature_scale: float = 1.0,
 ) -> Dict[str, Any]:
     """
     Compute the hybrid loss for given parameters.
@@ -690,7 +667,7 @@ def forward_loss(
     depth : int, optional
         Circuit depth (default: 3).
     channel_strength : float, optional
-        Maximum strength for evidence channels (default: 0.4).
+        Maximum strength for evidence channels (default: 0.1).
     use_cached_ansatz : bool, optional
         If True, cache transpiled gate counts by mask hash to speed up training
         (default: True).
@@ -698,10 +675,10 @@ def forward_loss(
         Qubit indices to apply evidence channel to. If None, defaults to [0]
         (default: None).
     readout_alpha : float, optional
-        Temperature scaling factor for sigmoid readout (default: 4.0).
-        Higher values (3-5) provide stronger nonlinearity.
+        Temperature scaling factor for sigmoid readout (default: 2.0).
+        Higher values (1-3) provide stronger nonlinearity.
     feature_scale : float, optional
-        Scaling factor for feature encoding rotations (default: π).
+        Scaling factor for feature encoding rotations (default: 1.0).
         Features are multiplied by this before applying RY/RZ rotations.
     
     Returns
@@ -761,7 +738,7 @@ def forward_loss(
             from qiskit import QuantumCircuit
             feature_qc = QuantumCircuit(n_qubits)
             for q in range(min(n_qubits, len(xi))):
-                # Scale features by feature_scale (default: π) to make rotations meaningful
+                # Scale features by feature_scale (default: 1.0) to make rotations meaningful
                 scaled_feature = feature_scale * xi[q]
                 feature_qc.ry(scaled_feature, q)
                 feature_qc.rz(scaled_feature, q)
@@ -771,6 +748,9 @@ def forward_loss(
         rho_U = apply_unitary(rho, ansatz)
         
         # Apply evidence channel based on stimulus
+        # Apply to all qubits to capture entanglement effects
+        if qargs is None:
+            qargs = list(range(n_qubits))
         rho_post = apply_evidence_channel(
             rho_U, xi, strength=channel_strength, qargs=qargs
         )
@@ -826,7 +806,7 @@ class QuantumBayesianLearner:
     backend : optional
         Qiskit backend for transpilation.
     channel_strength : float, optional
-        Maximum strength for evidence channels (default: 0.4).
+        Maximum strength for evidence channels (default: 0.1).
     use_cached_ansatz : bool, optional
         If True, cache transpiled gate counts (default: True).
     qargs : List[int], optional
@@ -846,11 +826,11 @@ class QuantumBayesianLearner:
         lam: float = 0.1,
         pairs: Optional[List[Tuple[int, int]]] = None,
         backend: Optional[Any] = None,
-        channel_strength: float = 0.4,
+        channel_strength: float = 0.1,
         use_cached_ansatz: bool = True,
         qargs: Optional[List[int]] = None,
-        readout_alpha: float = 4.0,
-        feature_scale: float = np.pi,
+        readout_alpha: float = 2.0,
+        feature_scale: float = 1.0,
     ):
         self.n_qubits = n_qubits
         self.depth = depth
@@ -975,8 +955,10 @@ class QuantumBayesianLearner:
             rho_U = apply_unitary(rho, ansatz)
             
             # Apply evidence channel
+            # Apply to all qubits to capture entanglement effects
+            eval_qargs = self.qargs if self.qargs is not None else list(range(self.n_qubits))
             rho_post = apply_evidence_channel(
-                rho_U, xi, strength=self.channel_strength, qargs=self.qargs
+                rho_U, xi, strength=self.channel_strength, qargs=eval_qargs
             )
             
             # Make predictions using temperature-scaled sigmoid

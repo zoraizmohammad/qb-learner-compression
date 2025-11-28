@@ -131,7 +131,7 @@ def finite_diff_gradient(
     Parameters
     ----------
     loss_fn : callable
-        Function that returns loss given theta.
+        Function that returns loss given theta (expects flattened array).
     theta : np.ndarray
         Current parameters.
     h : float
@@ -143,18 +143,19 @@ def finite_diff_gradient(
         Gradient estimate.
     """
     grad = np.zeros_like(theta)
-    loss_base = loss_fn(theta)
     
-    # Flatten for iteration
+    # Flatten for iteration - loss_fn expects flattened array
     theta_flat = theta.flatten()
     grad_flat = grad.flatten()
+    
+    # Compute base loss with flattened theta
+    loss_base = loss_fn(theta_flat)
     
     for i in range(len(theta_flat)):
         theta_perturbed = theta_flat.copy()
         theta_perturbed[i] += h
-        theta_pert = theta_perturbed.reshape(theta.shape)
-        
-        loss_pert = loss_fn(theta_pert)
+        # Pass flattened array directly - loss_fn will reshape internally
+        loss_pert = loss_fn(theta_perturbed)
         grad_flat[i] = (loss_pert - loss_base) / h
     
     return grad_flat.reshape(theta.shape)
@@ -169,6 +170,8 @@ def compute_ce_loss_only(
     n_qubits: int,
     depth: int,
     channel_strength: float = 0.4,
+    readout_alpha: float = 4.0,
+    feature_scale: float = np.pi,
 ) -> float:
     """
     Compute only the cross-entropy loss (without regularization).
@@ -208,6 +211,8 @@ def compute_ce_loss_only(
         n_qubits=n_qubits,
         depth=depth,
         channel_strength=channel_strength,
+        readout_alpha=readout_alpha,
+        feature_scale=feature_scale,
     )
     return loss_dict["ce_loss"]
 
@@ -340,6 +345,8 @@ def greedy_prune(
     tolerance: float,
     channel_strength: float = 0.4,
     recompute_baseline: bool = True,
+    readout_alpha: float = 4.0,
+    feature_scale: float = np.pi,
 ) -> Tuple[np.ndarray, int]:
     """
     Perform greedy pruning of entangling gates.
@@ -392,6 +399,8 @@ def greedy_prune(
         n_qubits=n_qubits,
         depth=depth,
         channel_strength=channel_strength,
+        readout_alpha=readout_alpha,
+        feature_scale=feature_scale,
     )
     baseline_loss = baseline_result["total_loss"]
     baseline_ce_loss = baseline_result["ce_loss"]  # Track CE loss separately
@@ -419,6 +428,8 @@ def greedy_prune(
                     n_qubits=n_qubits,
                     depth=depth,
                     channel_strength=channel_strength,
+                    readout_alpha=readout_alpha,
+                    feature_scale=feature_scale,
                 )
                 test_loss = test_result["total_loss"]
                 test_ce_loss = test_result["ce_loss"]
@@ -446,6 +457,8 @@ def greedy_prune(
                             n_qubits=n_qubits,
                             depth=depth,
                             channel_strength=channel_strength,
+                            readout_alpha=readout_alpha,
+                            feature_scale=feature_scale,
                         )
                         baseline_loss = baseline_result["total_loss"]
                         baseline_ce_loss = baseline_result["ce_loss"]
@@ -477,6 +490,8 @@ def main(
     optimizer_type: str = "finite_diff",
     debug_predictions_every: Optional[int] = None,
     output_dir: str = "results",
+    readout_alpha: float = 4.0,
+    feature_scale: float = np.pi,
 ) -> Dict[str, Any]:
     """
     Main training function for compressed model with pruning.
@@ -585,6 +600,10 @@ def main(
     print(f"Total trainable parameters: {np.prod(theta.shape)}")
     print(f"Initial active entanglers: {np.sum(mask == 1)} / {mask.size}")
     
+    # Store initial theta norm for comparison
+    theta_init_norm = np.linalg.norm(theta)
+    print(f"Initial theta norm: {theta_init_norm:.6f}")
+    
     # Store initial mask for comparison
     mask_initial = mask.copy()
     
@@ -622,6 +641,8 @@ def main(
             n_qubits=n_qubits,
             depth=depth,
             channel_strength=channel_strength,
+            readout_alpha=readout_alpha,
+            feature_scale=feature_scale,
         )
         return result["total_loss"]
     
@@ -642,6 +663,8 @@ def main(
             n_qubits=n_qubits,
             depth=depth,
             channel_strength=channel_strength,
+            readout_alpha=readout_alpha,
+            feature_scale=feature_scale,
         )
         
         total_loss = result["total_loss"]
@@ -657,12 +680,22 @@ def main(
         
         # Debug predictions if requested
         if debug_predictions_every is not None and (iteration + 1) % debug_predictions_every == 0:
+            hard_preds = (preds >= 0.5).astype(int)
             print(f"\n[Iteration {iteration+1}] Prediction Debug:")
-            print(f"  Predictions: {preds[:5]}... (showing first 5)")
-            print(f"  True labels: {y[:5]}")
+            print(f"  Predictions (probs): {preds[:10]}... (showing first 10)")
+            print(f"  Hard predictions: {hard_preds[:10]}")
+            print(f"  True labels: {y[:10]}")
             print(f"  Accuracy: {accuracy:.4f}")
             print(f"  CE loss: {ce_loss:.6f}")
             print(f"  Mask sparsity: {sparsity:.4f}")
+            print(f"  Avg prediction: {np.mean(preds):.4f}")
+            # Check for sign flip: if accuracy is very low, predictions might be inverted
+            if accuracy < 0.3:
+                inverted_preds = 1 - hard_preds
+                inverted_acc = compute_accuracy(inverted_preds, y)
+                print(f"  ⚠️  Low accuracy detected! Inverted accuracy: {inverted_acc:.4f}")
+                if inverted_acc > 0.7:
+                    print(f"  ⚠️  WARNING: Predictions appear to be inverted! Consider flipping sign in prediction logic.")
         
         # Log metrics
         history.append({
@@ -685,6 +718,8 @@ def main(
         
         # Update theta using gradient descent
         grad = finite_diff_gradient(loss_fn, theta, h=1e-5)
+        grad_norm = np.linalg.norm(grad)
+        theta_norm_before = np.linalg.norm(theta)
         
         if optimizer is not None:
             # Use Adam optimizer
@@ -693,6 +728,17 @@ def main(
         else:
             # Use finite-difference gradient descent
             theta = theta - lr * grad
+        
+        theta_norm_after = np.linalg.norm(theta)
+        theta_change = theta_norm_after - theta_norm_before
+        
+        # Log parameter update info every 10 iterations or first/last iteration
+        if iteration == 0 or iteration == n_iterations - 1 or (iteration + 1) % 10 == 0:
+            print(f"\n[Iteration {iteration+1}] Parameter Update:")
+            print(f"  Theta norm: {theta_norm_before:.6f} -> {theta_norm_after:.6f} (change: {theta_change:.6f})")
+            print(f"  Gradient norm: {grad_norm:.6f}")
+            if grad_norm < 1e-8:
+                print(f"  ⚠️  WARNING: Gradient norm is very small! Parameters may not be updating.")
         
         # Perform pruning periodically
         if (iteration + 1) % prune_every == 0 and iteration > 0:
@@ -712,6 +758,8 @@ def main(
                 tolerance=tolerance,
                 channel_strength=channel_strength,
                 recompute_baseline=True,
+                readout_alpha=readout_alpha,
+                feature_scale=feature_scale,
             )
             
             n_active_after = np.sum(mask == 1)
@@ -732,6 +780,8 @@ def main(
         n_qubits=n_qubits,
         depth=depth,
         channel_strength=channel_strength,
+        readout_alpha=readout_alpha,
+        feature_scale=feature_scale,
     )
     
     final_loss = final_result["total_loss"]
