@@ -1,0 +1,6 @@
+mask_type,lambda,accuracy,accuracy_drop_vs_baseline,cnot_count,cnot_reduction_vs_baseline
+baseline,0.0,0.5,0.0,6.0,0.0
+learned,0.1,0.5,0.0,4.0,33.33333333333333
+learned,0.3,0.5,0.0,4.0,33.33333333333333
+random,0.1,0.5,0.0,4.0,33.33333333333333
+random,0.3,0.5,0.0,4.0,33.33333333333333

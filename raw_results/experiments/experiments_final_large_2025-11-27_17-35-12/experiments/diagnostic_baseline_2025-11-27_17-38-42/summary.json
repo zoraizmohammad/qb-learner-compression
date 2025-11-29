@@ -1,0 +1,12 @@
+{
+  "experiment_name": "diagnostic_baseline",
+  "mode": "baseline",
+  "n_qubits": 2,
+  "depth": 3,
+  "n_iterations": 100,
+  "final_loss": 1.0375983712637453,
+  "final_accuracy": 0.5,
+  "two_qubit_count": 6,
+  "final_ce_loss": 0.438822381230722,
+  "active_entanglers": 3
+}

@@ -1,0 +1,7 @@
+experiment_name,mode,n_qubits,depth,n_iterations,final_loss,final_accuracy,two_qubit_count,final_ce_loss,active_entanglers,mask_sparsity
+baseline_pothos_large,baseline,2,3,100,1.5931471605599454,0.5,9,0.6931471605599454,3,
+baseline_pothos_small,baseline,2,3,100,1.5931471605599454,0.5,9,0.6931471605599454,3,
+compressed_pothos_large,compressed,2,3,100,0.6931471605599454,0.5,0,0.6931471605599454,0,1.0
+baseline_test_01,baseline,2,3,100,1.5931471605599454,0.5,9,0.6931471605599454,3,
+compressed_test_01,compressed,2,3,100,0.6931471605599454,0.5,0,0.6931471605599454,0,1.0
+heisenberg_small,baseline,2,3,100,1.1431471605599455,0.375,9,0.6931471605599454,3,

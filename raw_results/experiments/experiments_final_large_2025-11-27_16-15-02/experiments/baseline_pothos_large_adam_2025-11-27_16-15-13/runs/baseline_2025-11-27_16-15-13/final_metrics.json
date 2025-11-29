@@ -1,0 +1,9 @@
+{
+  "final_loss": 1.683424048646435,
+  "final_ce_loss": 0.7834240486464348,
+  "final_accuracy": 0.5,
+  "final_two_qubit_count": 9,
+  "n_iterations": 100,
+  "n_qubits": 2,
+  "depth": 3
+}

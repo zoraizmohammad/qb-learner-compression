@@ -1,0 +1,12 @@
+experiment_name,mode,n_qubits,depth,n_iterations,final_loss,final_accuracy,two_qubit_count,final_ce_loss,active_entanglers,mask_sparsity
+baseline_pothos_large,baseline,2,3,100,1.683424048646435,0.5,9,0.7842643341451403,3,
+baseline_pothos_large_adam,baseline,2,3,100,1.683424048646435,0.5,9,0.7842643341451403,3,
+baseline_pothos_large_channel08,baseline,2,3,100,1.683424048646435,0.5,9,0.7842643341451403,3,
+baseline_pothos_large_depth4,baseline,2,3,100,1.683424048646435,0.5,9,0.7842643341451403,3,
+baseline_pothos_large_fixed,baseline,2,3,100,1.683424048646435,0.5,9,0.7842643341451403,3,
+baseline_pothos_large_lam001,baseline,2,3,100,1.683424048646435,0.5,9,0.7842643341451403,3,
+compressed_pothos_large,compressed,2,3,100,0.7871228073010873,0.5,0,0.7877696538771318,0,1.0
+compressed_pothos_large_fixed,compressed,2,3,100,0.7871228073010873,0.5,0,0.7877696538771318,0,1.0
+compressed_pothos_large_gentle,compressed,2,3,100,0.7871228073010873,0.5,0,0.7877696538771318,0,1.0
+compressed_pothos_large_v2,compressed,2,3,100,0.7871228073010873,0.5,0,0.7877696538771318,0,1.0
+diagnostic_baseline,baseline,2,3,100,1.683424048646435,0.5,9,0.7842643341451403,3,

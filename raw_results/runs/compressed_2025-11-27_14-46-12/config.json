@@ -1,0 +1,20 @@
+{
+  "experiment_name": "compressed_2025-11-27_14-46-12",
+  "mode": "compressed",
+  "training": {
+    "n_qubits": 2,
+    "depth": 3,
+    "n_iterations": 200,
+    "lr": 0.05,
+    "lam": 0.01,
+    "prune_every": 50,
+    "tolerance": 0.02,
+    "seed": 42,
+    "channel_strength": 0.6,
+    "optimizer": "finite_diff",
+    "debug_predictions_every": null
+  },
+  "dataset": {
+    "name": "pothos_chater_large"
+  }
+}

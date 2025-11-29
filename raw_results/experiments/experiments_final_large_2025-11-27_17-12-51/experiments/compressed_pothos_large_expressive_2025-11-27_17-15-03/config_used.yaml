@@ -1,0 +1,13 @@
+channel_strength: 0.9
+dataset_name: pothos_chater_large
+depth: 4
+experiment_name: compressed_pothos_large_expressive
+lam: 0.1
+lr: 0.05
+mode: compressed
+n_iterations: 300
+n_qubits: 3
+optimizer: adam
+prune_every: 25
+seed: 42
+tolerance: 0.02

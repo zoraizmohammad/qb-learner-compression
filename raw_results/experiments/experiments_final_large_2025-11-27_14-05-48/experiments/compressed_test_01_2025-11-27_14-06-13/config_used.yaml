@@ -1,0 +1,16 @@
+dataset:
+  name: pothos_chater_small
+experiment_name: compressed_test_01
+mode: compressed
+training:
+  channel_strength: 0.4
+  debug_predictions_every: null
+  depth: 3
+  lam: 0.1
+  lr: 0.01
+  n_iterations: 100
+  n_qubits: 2
+  optimizer: finite_diff
+  prune_every: 20
+  seed: 42
+  tolerance: 0.01

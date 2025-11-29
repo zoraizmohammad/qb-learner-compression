@@ -1,0 +1,6 @@
+{
+  "experiment_name": "compressed_pothos_large_v2",
+  "mode": "compressed",
+  "status": "failed",
+  "error": "'Operator input dimensions are not equal to statevector subsystem dimensions.'"
+}

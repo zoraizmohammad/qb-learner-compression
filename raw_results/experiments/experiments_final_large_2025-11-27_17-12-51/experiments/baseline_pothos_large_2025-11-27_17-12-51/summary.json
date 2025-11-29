@@ -1,0 +1,12 @@
+{
+  "experiment_name": "baseline_pothos_large",
+  "mode": "baseline",
+  "n_qubits": 2,
+  "depth": 3,
+  "n_iterations": 100,
+  "final_loss": 2.2546869375418,
+  "final_accuracy": 0.5,
+  "two_qubit_count": 6,
+  "final_ce_loss": 1.6580525137284061,
+  "active_entanglers": 3
+}

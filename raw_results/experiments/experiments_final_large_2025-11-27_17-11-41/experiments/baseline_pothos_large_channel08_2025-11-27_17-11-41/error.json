@@ -1,0 +1,6 @@
+{
+  "experiment_name": "baseline_pothos_large_channel08",
+  "mode": "baseline",
+  "status": "failed",
+  "error": "'Operator input dimensions are not equal to statevector subsystem dimensions.'"
+}

@@ -1,0 +1,12 @@
+{
+  "final_loss": 0.7747231879397337,
+  "final_ce_loss": 0.6847231879397337,
+  "final_accuracy": 1.0,
+  "final_two_qubit_count": 9,
+  "final_mask_sparsity": 1.0,
+  "final_active_entanglers": 3,
+  "total_entanglers": 3,
+  "n_iterations": 200,
+  "n_qubits": 2,
+  "depth": 3
+}

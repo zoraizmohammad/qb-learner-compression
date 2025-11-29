@@ -1,0 +1,13 @@
+{
+  "experiment_name": "compressed_pothos_large_v2",
+  "mode": "compressed",
+  "n_qubits": 2,
+  "depth": 3,
+  "n_iterations": 100,
+  "final_loss": 0.5753087682451962,
+  "final_accuracy": 0.75,
+  "two_qubit_count": 0,
+  "final_ce_loss": 0.5890660831210466,
+  "active_entanglers": 0,
+  "mask_sparsity": 1.0
+}

@@ -1,0 +1,14 @@
+dataset:
+  name: pothos_chater_small
+experiment_name: baseline_test_01
+mode: baseline
+training:
+  channel_strength: 0.4
+  debug_predictions_every: null
+  depth: 3
+  lam: 0.1
+  lr: 0.01
+  n_iterations: 100
+  n_qubits: 2
+  optimizer: finite_diff
+  seed: 42

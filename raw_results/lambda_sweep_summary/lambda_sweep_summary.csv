@@ -1,0 +1,7 @@
+lambda,experiment_name,final_loss,final_ce_loss,final_accuracy,two_qubit_count,mask_sparsity,active_entanglers,total_entanglers,n_iterations,n_qubits,depth
+0.0,compressed_pothos_large_lam0.0,0.8279067233677878,0.8279067233677878,0.5,6,1.0,3,3,150,2,3
+0.001,compressed_pothos_large_lam0.001,0.8339067233790413,0.8279067233790413,0.5,6,1.0,3,3,150,2,3
+0.01,compressed_pothos_large_lam0.01,0.8879067233718378,0.8279067233718379,0.5,6,1.0,3,3,150,2,3
+0.05,compressed_pothos_large_lam0.05,1.1279067233703173,0.8279067233703173,0.5,6,1.0,3,3,150,2,3
+0.1,compressed_pothos_large_lam0.1,1.4279067233759923,0.8279067233759922,0.5,6,1.0,3,3,150,2,3
+0.2,compressed_pothos_large_lam0.2,2.0279067233777566,0.8279067233777562,0.5,6,1.0,3,3,150,2,3
