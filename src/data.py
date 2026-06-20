@@ -149,6 +149,209 @@ def get_pothos_chater_large() -> Tuple[np.ndarray, np.ndarray]:
 
 
 # ---------------------------------------------------------
+# 4) STRUCTURED P&C DATASET WITH DIFFICULTY KNOB (XOR-style)
+# ---------------------------------------------------------
+#
+# Motivation. Pothos & Chater categorization allows a category to be defined by
+# MORE THAN ONE prototype: a category is a set of exemplars grouped by similarity,
+# not necessarily a single Gaussian blob. We use a two-prototype-per-category
+# arrangement on opposite diagonals of the feature square:
+#
+#     Category A prototypes: (lo, lo) and (hi, hi)   (the main diagonal)
+#     Category B prototypes: (lo, hi) and (hi, lo)   (the anti-diagonal)
+#
+# This is a similarity-based ("simplicity principle") grouping in which the
+# category boundary is NON-LINEAR (an XOR / parity structure). It is the natural
+# choice for studying entangling capacity: a product (un-entangled) circuit that
+# sees one feature per qubit cannot represent the feature interaction this boundary
+# requires, whereas an entangled circuit can. Reducing the entangling structure
+# therefore costs accuracy in a measurable way, which is exactly the
+# accuracy--complexity trade-off this paper studies.
+#
+# A single ``separation`` knob (distance of prototypes from the center) together
+# with the cluster ``std`` controls task difficulty / class overlap, so we can
+# sweep difficulty levels and trace a family of accuracy--complexity frontiers.
+
+def get_pothos_chater_xor(
+    separation: float = 0.5,
+    std: float = 0.12,
+    n_per_cluster: int = 15,
+    seed: int = 30,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Pothos--Chater style categorization with a non-linear (XOR/parity) boundary.
+
+    Two prototypes per category placed on opposite diagonals, with Gaussian
+    similarity clusters around each prototype. ``separation`` sets how far the
+    prototypes sit from the center (larger = easier, more separated); ``std`` sets
+    the within-cluster spread (larger = more overlap = harder).
+
+    Parameters
+    ----------
+    separation : float
+        Half-distance between the low/high prototype coordinates. Prototype
+        coordinates are lo = 0.5 - separation/2, hi = 0.5 + separation/2,
+        clipped to [0, 1].
+    std : float
+        Isotropic standard deviation of each Gaussian cluster.
+    n_per_cluster : int
+        Points sampled around each of the four prototypes.
+    seed : int
+        Base random seed (each cluster uses a distinct derived seed).
+
+    Returns
+    -------
+    X : array, shape (4 * n_per_cluster, 2), values in [0, 1]
+    y : array, shape (4 * n_per_cluster,), labels in {0, 1}
+    """
+    lo = float(np.clip(0.5 - separation / 2.0, 0.0, 1.0))
+    hi = float(np.clip(0.5 + separation / 2.0, 0.0, 1.0))
+
+    # Category A on the main diagonal, Category B on the anti-diagonal.
+    protos_A = [np.array([lo, lo]), np.array([hi, hi])]
+    protos_B = [np.array([lo, hi]), np.array([hi, lo])]
+
+    blocks, labels = [], []
+    for k, c in enumerate(protos_A):
+        blocks.append(_sample_cluster(c, n=n_per_cluster, std=std, seed=seed + k))
+        labels += [0] * n_per_cluster
+    for k, c in enumerate(protos_B):
+        blocks.append(_sample_cluster(c, n=n_per_cluster, std=std, seed=seed + 100 + k))
+        labels += [1] * n_per_cluster
+
+    X = np.vstack(blocks)
+    y = np.array(labels)
+    return X, y
+
+
+def get_pothos_chater_parity(
+    n_features: int = 3,
+    separation: float = 0.5,
+    std: float = 0.12,
+    n_per_corner: int = 8,
+    seed: int = 30,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Multi-feature Pothos--Chater categorization with a parity category rule.
+
+    Prototypes sit at the 2**n_features corners of the feature hypercube (each
+    coordinate either lo = 0.5 - separation/2 or hi = 0.5 + separation/2). A corner's
+    category is the PARITY of how many coordinates are "high". Gaussian similarity
+    clusters surround each prototype. For n_features=2 this reduces to the XOR task.
+
+    Higher n_features requires entanglement distributed across more qubits, so that
+    reducing the entangling structure degrades accuracy gradually -- producing a
+    smooth accuracy--complexity frontier with a visible knee rather than a cliff.
+
+    Returns
+    -------
+    X : array, shape (2**n_features * n_per_corner, n_features), values in [0, 1]
+    y : array, shape (2**n_features * n_per_corner,), labels in {0, 1} (corner parity)
+    """
+    lo = float(np.clip(0.5 - separation / 2.0, 0.0, 1.0))
+    hi = float(np.clip(0.5 + separation / 2.0, 0.0, 1.0))
+
+    blocks, labels = [], []
+    for corner in range(2 ** n_features):
+        bits = [(corner >> b) & 1 for b in range(n_features)]
+        center = np.array([hi if b else lo for b in bits])
+        parity = sum(bits) % 2
+        blocks.append(_sample_cluster(center, n=n_per_corner, std=std, seed=seed + corner))
+        labels += [parity] * n_per_corner
+
+    X = np.vstack(blocks)
+    y = np.array(labels)
+    return X, y
+
+
+def get_pothos_chater_checker(
+    freq: int = 3,
+    noise: float = 0.0,
+    n: int = 200,
+    seed: int = 30,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Structured categorization task with a controllable-complexity ("checkerboard")
+    concept, in the spirit of Pothos & Chater's similarity-based grouping: nearby
+    stimuli usually share a category (local similarity), but category membership
+    depends on the JOINT configuration of both features, not either alone.
+
+    label = (floor(freq*x0) + floor(freq*x1)) mod 2.
+
+    The ``freq`` knob sets task complexity: higher frequency = finer cells = a more
+    intricate boundary that requires more circuit capacity (entangling structure) to
+    represent. This is the difficulty knob used for the difficulty sweep, and the
+    reason the accuracy--complexity frontier degrades GRADUALLY (a smooth knee) rather
+    than as an all-or-nothing cliff: capturing the boundary needs the feature
+    interaction that only entangling gates provide, in graded amounts.
+
+    Parameters
+    ----------
+    freq : int
+        Checkerboard frequency per axis (>=2). 2 = coarse (XOR-like), larger = harder.
+    noise : float
+        Fraction of labels randomly flipped (caps achievable accuracy below 1).
+    n : int
+        Number of stimuli, sampled uniformly in the unit square.
+    seed : int
+        Random seed.
+
+    Returns
+    -------
+    X : array, shape (n, 2), values in [0, 1]
+    y : array, shape (n,), labels in {0, 1}
+    """
+    rng = np.random.default_rng(seed)
+    X = rng.uniform(0.0, 1.0, size=(n, 2))
+    cell = np.floor(freq * X).sum(axis=1).astype(int)
+    y = cell % 2
+    if noise > 0:
+        flip = rng.uniform(size=n) < noise
+        y = np.where(flip, 1 - y, y)
+    return X, y.astype(int)
+
+
+# Named difficulty levels for the difficulty sweep. The difficulty knob is the
+# checkerboard frequency: higher frequency => more intricate boundary => more
+# entangling capacity required => a graded accuracy--complexity frontier.
+# (Empirically validated in scripts/probe_checker.py: freq 2 = plateau+cliff,
+#  freq 3 = mild graded decline, freq 4 = clear graded decline with a visible knee.)
+CHECKER_DIFFICULTY: dict = {
+    "easy":   dict(freq=2, noise=0.0),
+    "medium": dict(freq=3, noise=0.0),
+    "hard":   dict(freq=4, noise=0.0),
+}
+
+
+def get_checker_difficulty(level: str = "hard", n: int = 200, seed: int = 30):
+    """Checkerboard dataset for a named difficulty level (the difficulty sweep)."""
+    if level not in CHECKER_DIFFICULTY:
+        raise ValueError(f"Unknown level {level!r}; choose from {list(CHECKER_DIFFICULTY)}")
+    return get_pothos_chater_checker(n=n, seed=seed, **CHECKER_DIFFICULTY[level])
+
+
+# Legacy XOR difficulty levels (separation/std). Larger separation and smaller
+# std => easier (well-separated); smaller separation and larger std => harder
+# (more class overlap, lower Bayes-optimal accuracy).
+DIFFICULTY_LEVELS: dict = {
+    "easy":   dict(separation=0.62, std=0.07),
+    "medium": dict(separation=0.52, std=0.12),
+    "hard":   dict(separation=0.44, std=0.16),
+}
+
+
+def get_difficulty_dataset(
+    level: str = "medium",
+    n_per_cluster: int = 15,
+    seed: int = 30,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Convenience wrapper returning the XOR-style dataset for a named difficulty."""
+    if level not in DIFFICULTY_LEVELS:
+        raise ValueError(f"Unknown difficulty level {level!r}; choose from {list(DIFFICULTY_LEVELS)}")
+    return get_pothos_chater_xor(n_per_cluster=n_per_cluster, seed=seed, **DIFFICULTY_LEVELS[level])
+
+
+# ---------------------------------------------------------
 # Generic entry point
 # ---------------------------------------------------------
 
