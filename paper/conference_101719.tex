@@ -57,6 +57,9 @@ accuracy. Driving the cost to $N_{2q}=0$ collapses the learner to chance, confir
 that some entanglement is necessary. Critically, learned (greedy) masks outperform
 random masks at every matched two-qubit budget by $4$--$12$ percentage points, showing
 that \emph{which} interactions are kept, not merely how many, governs performance.
+Re-evaluating the trained circuits on the \texttt{FakeManila} noise model leaves the
+frontier essentially unchanged, indicating that the compression savings persist under
+realistic device noise.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -346,6 +349,31 @@ $N_{2q}$ & Learned Acc & Random Acc & $\Delta$ \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\subsection{Robustness Under a Device Noise Model}
+
+The frontier above is computed by exact simulation. To check that it survives realistic
+device imperfections, we re-evaluated the trained circuits---unchanged---on Qiskit's
+\texttt{FakeManila} noise model (the same backend used for the two-qubit cost) at $4096$
+shots. The deployment circuit is bit-identical to the trained model, verified to
+machine precision, so any difference is due to noise alone. Figure~\ref{fig:noise} shows
+that, across five seeds, accuracy under the noise model tracks the noiseless frontier
+within a few percent at every two-qubit budget, with overlapping error bars. The
+accuracy--complexity trade-off identified in simulation is therefore preserved under
+realistic device noise: the gate-count savings from compression are genuine net of noise,
+and the cheaper compressed circuits remain as accurate as the full one. Because only
+inference runs on the backend, the identical pipeline targets a physical IBM device by
+changing a single backend selector.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{fig_noise_robustness.png}
+\caption{Accuracy under the \texttt{FakeManila} noise model versus exact simulation
+(hard task, mean $\pm$ std over five seeds, $4096$ shots). The noisy and noiseless curves
+overlap across the full range of two-qubit budgets, so the simulated frontier---and the
+compression savings---hold under realistic device noise.}
+\label{fig:noise}
+\end{figure}
 
 \section{Discussion}
 

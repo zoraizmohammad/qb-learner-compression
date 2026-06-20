@@ -29,6 +29,7 @@ unsupervised human categorization. *Cognitive Psychology*, 45, 45–85.
 4. [How to Reproduce](#4-how-to-reproduce)
 5. [Interpreting the Results](#5-interpreting-the-results)
 6. [The Paper](#6-the-paper)
+7. [Running on Real Hardware](#7-running-on-real-hardware)
 
 ---
 
@@ -281,6 +282,33 @@ intended to be **regenerated from `results_v2/`**: the figures and tables emitte
 by `scripts/make_figures_v2.py` are the authoritative source, so no quantitative
 claim is hand-typed. Per the project plan, the paper is finalized **last**, after
 the `results_v2` sweeps are complete.
+
+---
+
+## 7. Running on Real Hardware
+
+The model **trains in exact simulation** and is **deployed for inference on hardware**.
+`src/hardware_backend.py` builds a Qiskit circuit that is bit-identical to the trained
+`qcore` model (verified to `< 1e-9` in `tests/test_hardware_backend.py`), estimates the
+readout observables on a chosen backend, and applies the trained head. Three backends:
+
+- `exact` — `StatevectorEstimator` (noiseless; equals the simulator).
+- `noisy` — `AerSimulator.from_backend(FakeManila)`, the real device **noise model** (free).
+- `ibm` — a real IBM Quantum device via `QiskitRuntimeService` (needs an API token).
+
+```bash
+# free: validate under the FakeManila noise model (full vs compressed circuit)
+python scripts/run_on_hardware.py --difficulty hard --mode noisy --shots 4096
+# how the whole frontier holds up under device noise (5 seeds -> figure + CSV)
+python scripts/noise_robustness.py
+# real IBM hardware (after setting up an account — see docs/HARDWARE.md)
+python scripts/run_on_hardware.py --difficulty hard --mode ibm --n-eval 20
+```
+
+Across five seeds, accuracy under the noise model tracks the noiseless frontier within a
+few percent at every two-qubit budget, so the compression savings are real net of noise.
+**Full connection instructions (IBM Quantum Platform token/instance setup, costs,
+troubleshooting) are in [`docs/HARDWARE.md`](docs/HARDWARE.md).**
 
 ---
 
