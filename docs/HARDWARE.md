@@ -70,6 +70,11 @@ export QISKIT_IBM_INSTANCE="<YOUR_INSTANCE_CRN>"
 ```
 
 ### 2.3 Verify the connection
+One command lists your operational real devices (with queue depths) and the least-busy one:
+```bash
+python scripts/check_ibm_connection.py
+```
+or inline:
 ```python
 from qiskit_ibm_runtime import QiskitRuntimeService
 svc = QiskitRuntimeService()
