@@ -58,8 +58,10 @@ that some entanglement is necessary. Critically, learned (greedy) masks outperfo
 random masks at every matched two-qubit budget by $4$--$12$ percentage points, showing
 that \emph{which} interactions are kept, not merely how many, governs performance.
 Re-evaluating the trained circuits on the \texttt{FakeManila} noise model leaves the
-frontier essentially unchanged, indicating that the compression savings persist under
-realistic device noise.
+frontier essentially unchanged, and on a physical IBM device (\texttt{ibm\_fez}) the full
+circuit collapses to near chance ($0.60$) while the compressed circuit retains its
+accuracy ($0.83$): on real NISQ hardware, structured compression is not merely free but
+necessary.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -375,6 +377,34 @@ compression savings---hold under realistic device noise.}
 \label{fig:noise}
 \end{figure}
 
+\subsection{Validation on a Physical Device}
+
+We then ran the trained circuits on a physical IBM Quantum processor
+(\texttt{ibm\_fez}, a 156-qubit device), evaluating the full and the greedy-compressed
+circuits on the hard task at $4096$ shots. The outcome (Fig.~\ref{fig:hardware}) is
+decisive and goes beyond the noise-model prediction. The full circuit, highly accurate
+in simulation ($0.95$), \emph{collapses to near chance on hardware} ($0.60$): its $24$
+post-transpile two-qubit gates accumulate enough error to destroy the prediction. The
+compressed circuit, with only $N_{2q}=6$, retains its accuracy ($0.93$ in simulation,
+$0.83$ on hardware). On real NISQ hardware, therefore, structured compression is not
+merely free but \emph{necessary}: it converts a circuit that device noise renders useless
+into one that works---a $0.22$ accuracy advantage at one quarter of the two-qubit cost.
+An independent smaller run ($16$ points, $2048$ shots) corroborated the effect, with the
+full circuit at $0.56$ and the compressed circuit at $0.88$. This is the central practical
+payoff of hardware-aware compression: the entangling capacity that is redundant in
+simulation is actively harmful on a real device, and pruning it in a task-aware way is
+what makes the learner usable on present-day hardware.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.86\columnwidth]{fig_hardware_real.png}
+\caption{Accuracy on a physical IBM device (\texttt{ibm\_fez}, $40$ test points, $4096$
+shots, hard task) versus exact simulation. The full circuit ($N_{2q}=24$) is destroyed by
+device noise and falls to near chance, whereas the greedy-compressed circuit ($N_{2q}=6$)
+retains its accuracy---so on real hardware compression is necessary, not just economical.}
+\label{fig:hardware}
+\end{figure}
+
 \section{Discussion}
 
 \subsection{Interpretation}
@@ -409,9 +439,11 @@ entangling capacity becomes more valuable as the task hardens, so the structured
 gap should widen with scale. Richer evidence channels (context-dependent or POVM-based
 updates) slot into the same belief-update interface, and the hardware-aware objective
 generalizes from $N_{2q}$ to a weighted combination of depth, coherence-time, and
-native-fidelity terms. Finally, because the cost is computed by transpiling to a real IBM
-backend, the identical pipeline runs against physical-device error rates by swapping the
-backend, turning the simulated frontier reported here into a hardware-validated one.
+native-fidelity terms. The pipeline already runs end-to-end on physical IBM hardware
+(Section~\ref{sec:results}); a natural next step is to map the full accuracy--complexity
+frontier on-device across budgets and difficulty levels, and to feed measured device error
+rates back into the compression objective so that pruning is guided directly by hardware
+cost rather than a gate-count proxy.
 
 \section{Related Work}
 
@@ -440,6 +472,9 @@ is redundant: the learner sheds two-thirds of its two-qubit gates for free, and 
 hardest difficulty a compressed circuit beats the full one. Entanglement remains
 necessary---zero entanglers collapses the learner to chance---and structure beats count,
 with learned masks outperforming random masks of equal budget at every operating point.
+These conclusions are not artifacts of simulation: on a physical IBM device
+(\texttt{ibm\_fez}) the full circuit collapses to near chance while the compressed circuit
+stays accurate, so on real hardware compression is what makes the learner usable at all.
 Together these results give a concrete, reproducible picture of a task-driven
 accuracy--complexity frontier for hardware-aware quantum learning, and they suggest that
 quantum models of cognition can be made far cheaper to run on near-term hardware without

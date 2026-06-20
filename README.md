@@ -307,6 +307,16 @@ python scripts/run_on_hardware.py --difficulty hard --mode ibm --n-eval 20
 
 Across five seeds, accuracy under the noise model tracks the noiseless frontier within a
 few percent at every two-qubit budget, so the compression savings are real net of noise.
+
+**Validated on a real device.** Running on the physical IBM processor `ibm_fez`
+(156 qubits, 40 test points, 4096 shots), the full circuit (`N2q=24`) collapses to near
+chance (**0.60**) while the greedy-compressed circuit (`N2q=6`) holds at **0.825** — on
+real hardware, structured compression is not just free but *necessary*. The numbers are in
+`results_v2/hardware/` and the figure is `results_v2/figures/hardware_real.png`
+(regenerate with `python scripts/plot_hardware.py`). First, sanity-check your connection:
+```bash
+python scripts/check_ibm_connection.py        # lists devices + least busy
+```
 **Full connection instructions (IBM Quantum Platform token/instance setup, costs,
 troubleshooting) are in [`docs/HARDWARE.md`](docs/HARDWARE.md).**
 

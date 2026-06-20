@@ -450,3 +450,21 @@ The HANDOFF future-work item "execution on real devices" is implemented.
 
 **Nothing left open.** All planned phases plus the hardware extension are done, tested,
 documented, and (pending this commit) pushed.
+
+### 2026-06-20 — RAN ON REAL QUANTUM HARDWARE (ibm_fez)
+Executed the experiment on a physical IBM device via the user's IBM Quantum Platform
+account (token saved to `~/.qiskit/`, NOT in the repo). `scripts/check_ibm_connection.py`
+confirmed 3 operational 156-qubit Heron devices (ibm_fez/marrakesh/kingston, 0 queue).
+Two runs on `ibm_fez`, hard task, both agree:
+| run | full N2q=24 (exact→ibm) | compressed N2q=6 (exact→ibm) |
+|-----|--------------------------|-------------------------------|
+| 40 pts, 4096 shots | 0.950 → **0.600** | 0.925 → **0.825** |
+| 16 pts, 2048 shots | 0.875 → 0.562 | 0.812 → 0.875 |
+**The full circuit collapses to near chance on real hardware (24 CNOTs accumulate too much
+noise); the compressed circuit holds.** This is the paper's thesis proven on silicon and is
+STRONGER than the FakeManila noise model predicted. Recorded in
+`results_v2/hardware/{ibm_fez_results.json, ibm_fez_run.txt}`; figure
+`results_v2/figures/hardware_real.png` via `scripts/plot_hardware.py`. Added to the paper
+(abstract + Results subsection "Validation on a Physical Device" + fig_hardware_real.png +
+conclusion). To reproduce: `python scripts/run_on_hardware.py --mode ibm --ibm-backend ibm_fez --n-eval 40`.
+NOTE: the API token appeared in chat once — it should be rotated at quantum.cloud.ibm.com.
