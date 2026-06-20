@@ -1,0 +1,3 @@
+ibm_fez, hard, 16 points, 2048 shots, seed 0:
+  full         N2q=24  acc_exact=0.875  acc_ibm=0.562
+  compressed   N2q=6   acc_exact=0.812  acc_ibm=0.875

@@ -1,0 +1,15 @@
+Larger real-hardware run on ibm_fez at Sat Jun 20 16:48:07 PDT 2026
+qiskit_runtime_service.__init__:WARNING:2026-06-20 16:48:18,787: Instance was not set at service instantiation. Free and trial plan instances will be prioritized. Based on the following filters: (tags: None, region: us-east, eu-de), and available plans: (open), the available account instances are: open-instance. If you need a specific instance set it explicitly either by using a saved account with a saved default instance or passing it in directly to QiskitRuntimeService().
+qiskit_runtime_service.backends:WARNING:2026-06-20 16:48:18,788: Using instance: open-instance, plan: open
+training full model in simulation ...
+building greedy-compressed model ...
+
+Backend mode: ibm  | shots: 4096  | eval points: 40  | difficulty: hard
+
+model             N2q  acc(exact)      acc(ibm)
+-----------------------------------------------
+full               24       0.950         0.600
+compressed~6        6       0.925         0.825
+
+done.
+EXIT=0 at Sat Jun 20 16:52:18 PDT 2026

@@ -1,0 +1,4 @@
+[
+  {"model": "full", "n2q": 24, "acc_exact": 0.950, "acc_ibm": 0.600, "backend": "ibm_fez", "n_eval": 40, "shots": 4096, "seed": 0, "difficulty": "hard"},
+  {"model": "compressed", "n2q": 6, "acc_exact": 0.925, "acc_ibm": 0.825, "backend": "ibm_fez", "n_eval": 40, "shots": 4096, "seed": 0, "difficulty": "hard"}
+]
