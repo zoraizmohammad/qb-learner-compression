@@ -1,8 +1,16 @@
-qiskit==1.1.0
-qiskit-aer==0.13.2
-matplotlib
-numpy
-scipy
-pandas
-tqdm
-pyyaml
+# Verified working on Python 3.14 (macOS arm64), June 2026.
+# The original pins (qiskit==1.1.0) do not build on Python 3.14; these are the
+# current, tested versions. The learned model uses JAX (exact autodiff); Qiskit is
+# used for the FakeManila post-transpile hardware cost (src/hardware_cost.py).
+qiskit==2.4.2
+qiskit-aer==0.17.2
+qiskit-ibm-runtime==0.47.0
+jax==0.10.2
+jaxlib==0.10.2
+numpy==2.4.6
+scipy==1.17.1
+scikit-learn==1.9.0
+pandas==3.0.3
+matplotlib==3.11.0
+tqdm==4.68.3
+pyyaml==6.0.3
