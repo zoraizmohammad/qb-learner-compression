@@ -1,0 +1,52 @@
+[
+  {
+    "n2q": 2,
+    "acc_exact": 0.8125,
+    "acc_ibm": 0.8125,
+    "backend": "ibm_fez",
+    "n_eval": 16,
+    "shots": 2048,
+    "difficulty": "hard",
+    "seed": 0
+  },
+  {
+    "n2q": 6,
+    "acc_exact": 0.8125,
+    "acc_ibm": 0.8125,
+    "backend": "ibm_fez",
+    "n_eval": 16,
+    "shots": 2048,
+    "difficulty": "hard",
+    "seed": 0
+  },
+  {
+    "n2q": 12,
+    "acc_exact": 0.8125,
+    "acc_ibm": 0.75,
+    "backend": "ibm_fez",
+    "n_eval": 16,
+    "shots": 2048,
+    "difficulty": "hard",
+    "seed": 0
+  },
+  {
+    "n2q": 18,
+    "acc_exact": 0.75,
+    "acc_ibm": 0.5625,
+    "backend": "ibm_fez",
+    "n_eval": 16,
+    "shots": 2048,
+    "difficulty": "hard",
+    "seed": 0
+  },
+  {
+    "n2q": 24,
+    "acc_exact": 0.875,
+    "acc_ibm": 0.5625,
+    "backend": "ibm_fez",
+    "n_eval": 16,
+    "shots": 2048,
+    "difficulty": "hard",
+    "seed": 0
+  }
+]
