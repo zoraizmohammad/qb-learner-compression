@@ -468,3 +468,18 @@ STRONGER than the FakeManila noise model predicted. Recorded in
 (abstract + Results subsection "Validation on a Physical Device" + fig_hardware_real.png +
 conclusion). To reproduce: `python scripts/run_on_hardware.py --mode ibm --ibm-backend ibm_fez --n-eval 40`.
 NOTE: the API token appeared in chat once — it should be rotated at quantum.cloud.ibm.com.
+
+### 2026-06-20 — On-device frontier + paper framing restored to the cognitive thesis
+- **On-device frontier** (`scripts/hardware_frontier.py`, ibm_fez, 5 budgets, 16 pts):
+  device accuracy falls MONOTONICALLY with N2q — 0.81 (N2q=2,6) → 0.75 (12) → 0.56 (18,24),
+  while exact stays flat. The "scissors" between exact and device IS the case for
+  compression. Saved `results_v2/hardware/ibm_fez_frontier.json` + `figures/hardware_frontier.png`.
+  QPU used ~150 s (Open plan: 413/600 s used, 187 s remaining; resets monthly).
+- **Paper rewritten to restore the psychology/quantum-cognition framing the user wanted**
+  (title "Linking Human Belief Updating to NISQ Circuit Complexity"; Bayesian-cognition +
+  quantum-cognition intro; belief-as-density-operator / evidence-as-quantum-channel methods
+  framed HONESTLY — pure-state unitary channel is a special case, non-unital extension noted;
+  cognitive-capacity discussion). **All 28 citations (b1–b28) restored and cited (no orphans).**
+  Primary hardware figure is now the on-device frontier. Compiles clean (4 figures).
+  Integrity boundary held: did NOT reintroduce false mixed-state/Kraus mechanism claims; the
+  density-matrix/channel language is used at the level it is actually implemented.
