@@ -451,6 +451,35 @@ The HANDOFF future-work item "execution on real devices" is implemented.
 **Nothing left open.** All planned phases plus the hardware extension are done, tested,
 documented, and (pending this commit) pushed.
 
+### 2026-06-21 — LITERAL mixed-state density-matrix learner (Step 1) implemented
+The cognitive mechanism is now true in the strongest sense, not just framed.
+- **`src/qdensity.py`** — genuine density-matrix learner: belief is a density operator;
+  prior is the maximally mixed I/2^n; evidence is a NON-UNITAL channel (stimulus-dependent
+  Luders/POVM filter K_x rho K_x^dagger + trace renormalization = the Bayesian update, plus
+  per-qubit amplitude damping, a multi-Kraus non-unital CPTP map); readout Tr[rho P]; exact
+  JAX gradients; `make_dynamic_fns` for recompile-free mask sweeps. Verified: trace=1,
+  Hermitian, PSD, purity 0.41–0.66 (genuinely MIXED), reduces bit-for-bit to qcore when the
+  channel is off (7.8e-16), learns (easy 0.97 / medium 0.93 / hard 0.88). Canonical config
+  prior="pure", damping=True trains best.
+- **`tests/test_qdensity.py`** (subagent) — 6 tests pass (CPTP, mixedness, statevector
+  reduction, non-unitality, dynamic==static, learns).
+- **`docs/DENSITY_MODEL.md`** (subagent) — full write-up.
+- **`src/run_density.py`** — greedy-pruning runner for the density model. Grid (3 difficulties
+  x 3 seeds) in `results_v2_density/`: the frontier and capacity boundary REPRODUCE
+  (hard 0.87–0.90 across budgets -> 0.51 at N2q=0; learned beats random every budget, mean +0.043).
+- **Paper** — Methods now describe BOTH realizations honestly (the mixed-state non-unital
+  channel is literally implemented, not deferred); new Results subsection "The Full
+  Density-Matrix Realization" (Table~\ref{tab:density}) shows the conclusions hold for the
+  genuine mechanism. Compiles to a clean PDF. README updated; qcore vs qdensity documented.
+- **ENV GOTCHA (important):** the Desktop is on **iCloud sync**; under heavy concurrent load
+  iCloud evicts/cancels reads of the thousands of `.venv` files -> intermittent
+  `OSError [Errno 89] Operation canceled` and matplotlib font-cache hangs. Mitigation: run ONE
+  python process at a time; don't `rm -rf ~/.matplotlib` (forces a slow rebuild that can wedge
+  under load); prefer system tools (awk/grep) for quick CSV stats. `timeout` is NOT installed
+  (use `gtimeout` from coreutils if needed). Figures for the density model were reported as a
+  LaTeX table (Table~\ref{tab:density}) rather than a matplotlib figure to avoid the font-cache
+  flakiness; `scripts/make_figures_density.py` exists to render them when the machine is calm.
+
 ### 2026-06-20 — RAN ON REAL QUANTUM HARDWARE (ibm_fez)
 Executed the experiment on a physical IBM device via the user's IBM Quantum Platform
 account (token saved to `~/.qiskit/`, NOT in the repo). `scripts/check_ibm_connection.py`

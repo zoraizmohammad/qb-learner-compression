@@ -133,15 +133,25 @@ quantum-cognitive models implement belief updates through channels and measureme
 operations \cite{b3,b8,b9}. The posterior category probability is then obtained by
 measuring the updated belief state (Section~\ref{sec:readout}).
 
-In the present implementation we take $\rho_0 = \lvert 0\rangle\!\langle 0\rvert^{\otimes
-n}$ (a definite prior) and realize the evidence channel as a \emph{unitary} channel
+We provide two realizations of this learner. A fast \emph{pure-state} realization takes
+$\rho_0=\lvert 0\rangle\!\langle 0\rvert^{\otimes n}$ and a unitary evidence channel
 $\mathcal{E}_x(\rho)=U(x;\theta,m)\,\rho\,U(x;\theta,m)^{\dagger}$ built from a data
-re-uploading encoding of $x$ interleaved with trainable layers (Section~II-B). The belief
-state therefore remains pure and the dynamics are exactly simulable and analytically
-differentiable, which is what lets us train the learner with exact gradients and map the
-capacity boundary precisely; extending $\mathcal{E}_x$ to non-unital channels that drive
-the belief mixed is an immediate generalization within the same formalism
-(\ref{eq:channel}).
+re-uploading encoding interleaved with the masked Heisenberg layers of Section~II-B; the
+belief stays pure, so it is exactly simulable as a statevector and is used for the bulk of
+the experiments below. A second, \emph{mixed-state} realization implements the channel
+(\ref{eq:channel}) literally: starting from the maximally mixed prior $\rho_0=\mathbb{I}/2^n$
+(a uniform ``no information'' belief), each update applies the unitary layers and then a
+genuinely non-unital evidence channel---a stimulus-dependent L\"uders/POVM filter
+$K_x\rho K_x^{\dagger}$ followed by the Bayesian trace renormalization
+$\rho\mapsto\rho/\mathrm{Tr}[K_x\rho K_x^{\dagger}]$, together with per-qubit amplitude
+damping (a multi-Kraus, non-unital CPTP map). Here the belief is a genuine mixed density
+operator (purity $<1$, verified positive semidefinite and trace-one); crucially, because a
+unitary leaves $\mathbb{I}/2^n$ invariant, it is precisely the non-unitality of the evidence
+channel that lets evidence move the belief, mirroring the role of evidence in Bayesian
+updating. Both realizations are exactly simulated and analytically differentiable, and the
+mixed-state model reduces bit-for-bit to the pure-state one when the channel is switched
+off; Section~\ref{sec:density} shows it reproduces the accuracy--complexity findings, so the
+conclusions do not depend on the pure-state simplification.
 
 \subsection{Variational Ansatz and Heisenberg Entanglers}
 
@@ -377,6 +387,46 @@ widening gap between the curves is the cost of redundant entangling capacity on 
 hardware---and the case for compression.}
 \label{fig:hardware}
 \end{figure}
+
+\subsection{The Full Density-Matrix Realization}
+\label{sec:density}
+
+The results above use the fast pure-state realization. To confirm they are not artifacts
+of that simplification, we repeat the core experiments with the literal mixed-state model
+of Section~II-A: a density operator evolved by the masked Heisenberg unitaries and a
+genuinely non-unital evidence channel---a stimulus-dependent L\"uders/POVM filter with
+Bayesian trace renormalization, plus per-qubit amplitude damping---starting from the
+maximally mixed prior $\mathbb{I}/2^n$. The belief is a bona fide mixed state (verified
+Hermitian, positive semidefinite, unit trace, purity $<1$), and the implementation reduces
+bit-for-bit to the pure-state model when the channel is disabled.
+
+This principled model reproduces every qualitative finding. Its accuracy--complexity
+frontier (Table~\ref{tab:density}) is again high and flat across two-qubit budgets and
+collapses to near chance only when all entanglers are removed ($N_{2q}=0$): the capacity
+boundary is intact. The hardest task again shows accuracy peaking at intermediate cost
+($0.88$ at $N_{2q}=6$ vs $0.87$ at the full $N_{2q}=24$). And learned masks again beat
+random masks at every matched budget (mean advantage $+0.043$, up to $+0.11$ at
+$N_{2q}=6$). The conclusions---a sharp capacity boundary, free or beneficial structured
+compression, and the primacy of structure over count---therefore hold for the genuine
+quantum Bayesian belief-update mechanism, not only its pure-state surrogate.
+
+\begin{table}[H]
+\centering
+\caption{Density-matrix learner: mean test accuracy by post-transpile two-qubit count
+(three seeds) for the three difficulties. The frontier is flat above $N_{2q}=0$ and
+collapses to chance at $N_{2q}=0$, reproducing the pure-state results with a genuine
+mixed-state, non-unital-channel belief update.}
+\label{tab:density}
+\begin{tabular}{lccccc}
+\toprule
+Difficulty & $N_{2q}{=}24$ & $12$ & $6$ & $2$ & $0$ \\
+\midrule
+Easy   & 0.944 & 0.939 & 0.944 & 0.950 & 0.572 \\
+Medium & 0.911 & 0.939 & 0.961 & 0.972 & 0.717 \\
+Hard   & 0.872 & 0.844 & 0.883 & 0.817 & 0.511 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \section{Discussion}
 

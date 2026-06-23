@@ -133,6 +133,20 @@ the old finite-difference / frozen-readout learner entirely.
 
 The simulator is verified bit-for-bit against Qiskit (`scripts/verify_qcore.py`).
 
+### `src/qdensity.py` — the literal mixed-state density-matrix learner
+
+The principled realization of the quantum-Bayesian mechanism with **no pure-state
+shortcut**: the belief is a genuine **density operator** `ρ`, the prior is the
+**maximally mixed** state `I/2ⁿ` (a uniform "no information" belief), and the evidence
+update is a **non-unital quantum channel with trace renormalization** — a
+stimulus-dependent Lüders/POVM filter `Kₓ ρ Kₓ†` then `ρ/Tr(·)` (the Bayesian update),
+plus per-qubit amplitude damping (a multi-Kraus, non-unital CPTP map). The readout is
+`Tr[ρP]` through the same trainable head. It is exact, differentiable (dense JAX matrix
+ops), reduces bit-for-bit to `qcore` when the channel is off, and is verified mixed
+(purity < 1), Hermitian, PSD, trace-one. Used to confirm the frontier and learned-vs-random
+results hold for the principled model (`src/run_density.py`, `tests/test_qdensity.py`).
+**Full write-up in [`docs/DENSITY_MODEL.md`](docs/DENSITY_MODEL.md).**
+
 ### `src/hardware_cost.py` — genuine FakeManila two-qubit cost
 
 Computes the real, post-transpile hardware cost:
