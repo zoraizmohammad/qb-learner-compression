@@ -401,14 +401,33 @@ Hermitian, positive semidefinite, unit trace, purity $<1$), and the implementati
 bit-for-bit to the pure-state model when the channel is disabled.
 
 This principled model reproduces every qualitative finding. Its accuracy--complexity
-frontier (Table~\ref{tab:density}) is again high and flat across two-qubit budgets and
-collapses to near chance only when all entanglers are removed ($N_{2q}=0$): the capacity
-boundary is intact. The hardest task again shows accuracy peaking at intermediate cost
-($0.88$ at $N_{2q}=6$ vs $0.87$ at the full $N_{2q}=24$). And learned masks again beat
-random masks at every matched budget (mean advantage $+0.043$, up to $+0.11$ at
-$N_{2q}=6$). The conclusions---a sharp capacity boundary, free or beneficial structured
-compression, and the primacy of structure over count---therefore hold for the genuine
-quantum Bayesian belief-update mechanism, not only its pure-state surrogate.
+frontier (Fig.~\ref{fig:density}, Table~\ref{tab:density}) is again high and flat across
+two-qubit budgets and collapses to near chance only when all entanglers are removed
+($N_{2q}=0$): the capacity boundary is intact. The hardest task again shows accuracy
+peaking at intermediate cost ($0.88$ at $N_{2q}=6$ vs $0.87$ at the full $N_{2q}=24$). And
+learned masks again beat random masks at every matched budget (Fig.~\ref{fig:densab}; mean
+advantage $+0.043$, up to $+0.11$ at $N_{2q}=6$). The conclusions---a sharp capacity
+boundary, free or beneficial structured compression, and the primacy of structure over
+count---therefore hold for the genuine quantum Bayesian belief-update mechanism, not only
+its pure-state surrogate.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{fig_density_frontier.png}
+\caption{Density-matrix learner: accuracy--complexity frontier across difficulties (three
+seeds). The capacity boundary (collapse at $N_{2q}=0$) and the flat frontier reproduce the
+pure-state results, here with a genuine mixed-state, non-unital-channel belief update.}
+\label{fig:density}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{fig_density_ablation.png}
+\caption{Density-matrix learner: learned versus random masks (hard task). As in the
+pure-state model, learned (greedy) masks beat random masks of equal sparsity at every
+matched two-qubit budget---structure beats count for the genuine belief-update mechanism too.}
+\label{fig:densab}
+\end{figure}
 
 \begin{table}[H]
 \centering
