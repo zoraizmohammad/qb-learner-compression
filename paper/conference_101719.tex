@@ -106,7 +106,7 @@ before the quantum Bayesian learner can no longer represent the categorization t
 
 Our contributions are: (1) a compact quantum Bayesian learner, framed in the
 density-operator / quantum-channel language of quantum cognition and realized as an
-exactly-simulated, analytically-differentiable circuit that genuinely learns the task;
+exactly-simulated, analytically-differentiable circuit that successfully learns the task;
 (2) a hardware-aware cost based on the real post-transpile two-qubit count on
 \texttt{FakeManila}, resolved at the level of individual $R_{XX}/R_{YY}/R_{ZZ}$
 interaction terms; (3) empirical accuracy--complexity frontiers, across task difficulty
@@ -202,7 +202,7 @@ updated belief, $v=(\langle Z_0\rangle,\langle Z_1\rangle,\langle X_0\rangle,\la
 X_1\rangle)$, through a trainable head $\hat y = \sigma(w\cdot v + b)$. Restricting the
 readout to single-qubit observables is deliberate: a product (unentangled) belief
 factorizes these expectations, so any feature interaction in the decision boundary must be
-supplied by the evidence channel's entangling layers. Entanglement is thus genuinely
+supplied by the evidence channel's entangling layers. Entanglement is thus strictly
 necessary for nontrivial categorization, and the two-qubit budget meaningfully bounds the
 learner's cognitive capacity.
 
@@ -388,13 +388,16 @@ task, five seeds, $4096$ shots). The curves overlap across all budgets.}
 We then ran the trained circuits on a physical IBM Quantum processor (\texttt{ibm\_fez}, a
 $156$-qubit Heron device), mapping the accuracy--complexity frontier on-device across five
 two-qubit budgets at $2048$--$4096$ shots (run provenance---date, shots, transpiler
-settings---in Appendix~\ref{app:hw}). The outcome (Fig.~\ref{fig:hardware}) is clear in
-this controlled run and \emph{reverses} the simulated picture. In exact simulation the frontier is
+settings---in Appendix~\ref{app:hw}). Each device point is a single trained model
+(seed~0) evaluated in one job on $16$ held-out test stimuli at $2048$ shots; the
+endpoint confirmation below uses $40$ test stimuli at $4096$ shots. Device cost limits
+the on-device sweep to five two-qubit budgets. The outcome (Fig.~\ref{fig:hardware}) is
+clear in this controlled run and \emph{reverses} the simulated picture. In exact simulation the frontier is
 nearly flat; on hardware it slopes steeply downward as $N_{2q}$ grows---device accuracy
 holds at $0.81$ for the cheap circuits ($N_{2q}=2,6$), slips to $0.75$ at $N_{2q}=12$, and
 \emph{collapses to near chance} ($0.56$) at $N_{2q}=18,24$, where the full circuit's
 two-qubit gates accumulate enough error to destroy the belief update. A separate denser run
-($40$ points, $4096$ shots) confirms the endpoints, with the full circuit at $0.60$
+($40$ test stimuli, $4096$ shots) confirms the endpoints, with the full circuit at $0.60$
 (simulation $0.95$) and the compressed circuit at $0.83$ (simulation $0.93$). On real NISQ
 hardware, therefore, hardware-aware compression of the quantum Bayesian learner is not
 merely free but \emph{necessary}: more entangling capacity, helpful or neutral in
@@ -405,7 +408,7 @@ makes the learner work at all.
 \centering
 \includegraphics[width=\columnwidth]{fig_hardware_frontier.png}
 \caption{The accuracy--complexity frontier on a physical IBM device (\texttt{ibm\_fez},
-hard task, $16$ points). In exact simulation accuracy is flat across budgets; on hardware
+hard task, $16$ test stimuli, five device budgets). In exact simulation accuracy is flat across budgets; on hardware
 it falls monotonically with $N_{2q}$, collapsing toward chance for the full circuit. The
 widening gap between the curves is the cost of redundant entangling capacity on real
 hardware---and the case for compression.}
@@ -418,7 +421,7 @@ hardware---and the case for compression.}
 The results above use the fast pure-state realization. To confirm they are not artifacts
 of that simplification, we repeat the core experiments with the literal mixed-state model
 of Section~II-A: a density operator evolved by the masked Heisenberg unitaries and a
-genuinely non-unital evidence channel---a stimulus-dependent L\"uders/POVM filter with
+explicitly non-unital evidence channel---a stimulus-dependent L\"uders/POVM filter with
 Bayesian trace renormalization, plus per-qubit amplitude damping---starting from the
 maximally mixed prior $\mathbb{I}/2^n$. The belief is a bona fide mixed state (verified
 Hermitian, positive semidefinite, unit trace, purity $<1$), and the implementation reduces
@@ -431,7 +434,7 @@ two-qubit budgets and collapses to near chance only when all entanglers are remo
 peaking at intermediate cost ($0.88$ at $N_{2q}=6$ vs $0.87$ at the full $N_{2q}=24$). And
 learned masks again beat random masks at every matched budget (Fig.~\ref{fig:densab}; mean
 advantage $+0.043$, up to $+0.11$ at $N_{2q}=6$). The conclusions---a sharp capacity
-boundary, free or beneficial structured compression, and the primacy of structure over
+boundary, performance-preserving or beneficial structured compression, and the primacy of structure over
 count---therefore hold for the genuine quantum Bayesian belief-update mechanism, not only
 its pure-state surrogate.
 
@@ -545,7 +548,7 @@ hardware.
 We set out to connect Bayesian models of cognition, the Hilbert-space formalism of quantum
 cognition, and the hard constraints of NISQ hardware, by asking how far a quantum Bayesian
 learner can be compressed before it can no longer accurately represent the task. Building a learner that
-genuinely categorizes and compressing it by greedy structured pruning, we found a clear
+reliably categorizes and compressing it by greedy structured pruning, we found a clear
 capacity boundary: most entangling structure is redundant---the learner sheds two-thirds of
 its two-qubit gates for free and, on the hardest task, a compressed circuit beats the full
 one---yet entanglement remains necessary, since removing it collapses the learner to chance.
@@ -597,7 +600,7 @@ To anchor the easy/medium/hard difficulty levels outside the quantum model, we t
 standard classical classifiers on the \emph{identical} data and train/test splits (200
 stimuli, $70/30$, five seeds). Table~\ref{tab:classical} reports mean test accuracy. A
 linear model (logistic regression) sits at chance on every level, confirming the task
-genuinely requires the joint-feature interaction that entanglement supplies; kernel-SVM
+demonstrably requires the joint-feature interaction that entanglement supplies; kernel-SVM
 and MLP accuracy fall monotonically from easy to hard, confirming the checkerboard
 frequency is a meaningful difficulty axis. The quantum learner is competitive with the
 strong classical models while exposing the compression frontier that is the paper's
@@ -613,9 +616,9 @@ best compressed operating point. Chance is $0.5$.}
 \toprule
 Task & LogReg & RBF-SVM & MLP & Full QBL & Best comp. \\
 \midrule
-Easy   & 0.453 & 0.940 & 0.967 & 0.940 & 0.970 \\
-Medium & 0.533 & 0.860 & 0.910 & 0.947 & 0.973 \\
-Hard   & 0.550 & 0.647 & 0.857 & 0.873 & 0.927 \\
+Easy   & 0.453 & 0.940 & 0.967 & 0.940 & \textbf{0.970} \\
+Medium & 0.533 & 0.860 & 0.910 & 0.947 & \textbf{0.973} \\
+Hard   & 0.550 & 0.647 & 0.857 & 0.873 & \textbf{0.927} \\
 \bottomrule
 \end{tabular}
 \end{table}
