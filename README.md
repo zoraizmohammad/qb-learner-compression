@@ -265,6 +265,38 @@ Outputs land in:
   `mask_ablation.png`
 - `results_v2/tables/` — `frontier.tex`, `lambda_sweep.tex`, `mask_ablation.tex`
 
+### One-shot reproduction
+
+`scripts/reproduce_paper.sh` runs the whole simulation pipeline end to end (sanity
+check → pure-state sweeps → density-matrix sweeps → noise model → classical baselines
+→ paired statistics → all figures). Add `--hardware` to also re-run the `ibm_fez`
+device experiments (needs IBM credentials).
+
+```bash
+bash scripts/reproduce_paper.sh            # all simulation results + figures
+bash scripts/reproduce_paper.sh --hardware # also the ibm_fez device runs
+```
+
+### Paper artifact → command map
+
+Every figure and table in `paper/conference_101719.tex` is produced by the commands
+below; raw numbers live next to the figures so the PDF, repo, and logs stay in lockstep.
+
+| Paper artifact | Produced by | Data |
+|---|---|---|
+| Fig. 1 (frontier family) | `src.run_v2` → `make_figures_v2.py` | `results_v2/<diff>/frontier.csv` |
+| Tab. I (λ sweep) | `src.run_v2` | `results_v2/hard/lambda_sweep.csv` |
+| Fig. 2 + Tab. II (learned vs random) | `src.run_v2` → `make_figures_v2.py` | `results_v2/hard/mask_ablation.csv` |
+| Fig. 3 (noise robustness) | `scripts/noise_robustness.py` | `results_v2/hardware/noise_robustness.csv` |
+| Fig. 4 (device frontier) | `scripts/hardware_frontier.py` | `results_v2/hardware/ibm_fez_frontier.json` |
+| Abstract/§IV-E endpoints | `scripts/run_on_hardware.py --mode ibm` | `results_v2/hardware/ibm_fez_results.json` |
+| Fig. 5, 6 + Tab. III (density) | `src.run_density` → `make_figures_density.py` | `results_v2_density/<diff>/` |
+| Tab. V (classical baselines, App. B) | `scripts/classical_baselines.py` | `results_v2/classical_baselines.csv` |
+| §IV-C paired statistic | `scripts/paired_stats.py hard` | `results_v2/hard/mask_ablation.csv` |
+
+Device-run provenance (backend, date, shots, transpiler settings) is recorded in
+`results_v2/hardware/RUN_METADATA.md` and mirrored in the paper appendix.
+
 ---
 
 ## 5. Interpreting the Results
