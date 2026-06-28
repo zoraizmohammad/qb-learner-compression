@@ -47,7 +47,7 @@ circuit and add a hardware-aware penalty equal to the number of two-qubit gates 
 survive transpilation to IBM's \texttt{FakeManila} coupling map, then compress the
 circuit by greedy structured pruning of individual Heisenberg interaction terms. The
 central question is where the \emph{capacity boundary} lies: how much entangling structure
-can be removed before the learner stops being able to learn. Across three task difficulty
+can be removed before the learner can no longer accurately represent the task. Across three task difficulty
 levels and five seeds we trace accuracy--complexity frontiers and find that structured
 compression is essentially free, and on the hardest task beneficial (accuracy peaks at a
 quarter of the full two-qubit cost), while removing all entanglers collapses the learner
@@ -97,11 +97,12 @@ task in the spirit of similarity-based human categorization \cite{b19}. We then 
 the learner to realistic hardware pressure: the update circuit is a hardware-efficient,
 Heisenberg-type ansatz, and we add a hardware-aware loss that penalizes the number of
 two-qubit gates remaining after transpilation to a target backend. By training and
-compressing this learner we obtain an empirical trade-off between \emph{cognitive
-capacity}---the learner's ability to update beliefs and categorize stimuli---and
+compressing this learner we obtain an empirical trade-off between \emph{task
+performance}---accuracy and cross-entropy on the categorization task---and
 \emph{circuit capacity}---the entangling structure of the underlying circuit under NISQ
-constraints. The guiding question is concrete: \emph{how much of the circuit can we remove
-before the quantum Bayesian learner stops being able to learn?}
+constraints---which we interpret through the lens of \emph{cognitive capacity}: the
+learner's ability to update beliefs and categorize stimuli. The guiding question is concrete: \emph{how much of the circuit can we remove
+before the quantum Bayesian learner can no longer represent the categorization task?}
 
 Our contributions are: (1) a compact quantum Bayesian learner, framed in the
 density-operator / quantum-channel language of quantum cognition and realized as an
@@ -473,8 +474,10 @@ Hard   & 0.872 & 0.844 & 0.883 & 0.817 & 0.511 \\
 Throughout, ``cognitive capacity'' denotes task performance under this constrained
 belief-update and single-qubit-readout model---the learner's ability to represent and
 update the category rule---and not human working-memory capacity; the entangling structure
-of the evidence channel is its operational proxy. Reading that structure as cognitive
-capacity, the experiments locate a clear capacity boundary. A fully entangled belief register has more representational
+of the evidence channel is its operational proxy. We do not claim the task or the learner
+models human categorization behavior: the cognitive framing is an interpretive lens on a
+controlled quantum-circuit experiment, not an empirical claim about people. Reading that
+structure as cognitive capacity, the experiments locate a clear capacity boundary. A fully entangled belief register has more representational
 machinery than this categorization task needs: most of it can be pruned with no loss, and
 on the hardest task a moderately compressed learner is \emph{better} than the full one,
 because the surplus capacity was being overfit. Yet capacity cannot be removed entirely---a
@@ -535,7 +538,7 @@ hardware.
 
 We set out to connect Bayesian models of cognition, the Hilbert-space formalism of quantum
 cognition, and the hard constraints of NISQ hardware, by asking how far a quantum Bayesian
-learner can be compressed before it stops being able to learn. Building a learner that
+learner can be compressed before it can no longer accurately represent the task. Building a learner that
 genuinely categorizes and compressing it by greedy structured pruning, we found a clear
 capacity boundary: most entangling structure is redundant---the learner sheds two-thirds of
 its two-qubit gates for free and, on the hardest task, a compressed circuit beats the full
@@ -546,7 +549,8 @@ device the full circuit collapses to near chance while the compressed circuit st
 accurate, so on real hardware compression is what makes the learner usable at all. The
 result is a small but concrete case study linking cognitive capacity and quantum circuit
 capacity in one experiment, and a demonstration that quantum models of cognition can be made
-to fit---and even prefer---the limits of present-day quantum hardware.
+can be adapted to---and on real hardware even benefit from---the constraints of
+present-day quantum hardware.
 
 \appendices
 
