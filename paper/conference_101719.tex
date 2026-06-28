@@ -39,8 +39,9 @@ near-term quantum hardware. Bayesian theories treat human learning as belief upd
 over structured hypotheses, and quantum cognition represents belief states in Hilbert
 space with evidence acting through quantum channels. We instantiate a small \emph{quantum
 Bayesian learner}: a belief state on a two-qubit register, a prior, and a
-stimulus-dependent evidence channel that updates the belief on a Pothos--Chater style
-categorization task, with the posterior category read out by measurement. To tie this
+stimulus-dependent evidence channel that updates the belief on a synthetic
+similarity-structured categorization task inspired by the simplicity principle of
+Pothos and Chater, with the posterior category read out by measurement. To tie this
 cognitive picture to real devices, we make the learner a hardware-efficient variational
 circuit and add a hardware-aware penalty equal to the number of two-qubit gates that
 survive transpilation to IBM's \texttt{FakeManila} coupling map, then compress the
@@ -51,8 +52,8 @@ levels and five seeds we trace accuracy--complexity frontiers and find that stru
 compression is essentially free, and on the hardest task beneficial (accuracy peaks at a
 quarter of the full two-qubit cost), while removing all entanglers collapses the learner
 to chance---a concrete cognitive-capacity boundary. Learned masks beat random masks at
-every matched budget ($4$--$12$ points), so \emph{which} interactions are kept matters,
-not only how many. Finally, on a physical IBM device (\texttt{ibm\_fez}) the full circuit
+every matched budget (by roughly $6$--$12$ percentage points on the hard task), so
+\emph{which} interactions are kept matters, not only how many. Finally, on a physical IBM device (\texttt{ibm\_fez}) the full circuit
 collapses to near chance ($0.60$) while the compressed circuit retains accuracy ($0.83$):
 on real NISQ hardware, hardware-aware compression of a quantum Bayesian learner is not
 merely economical but necessary.
@@ -131,7 +132,10 @@ the incorporation of a stimulus $x$ is modeled as a completely-positive trace-pr
 where $\{E_{x,k}\}$ are stimulus-dependent Kraus operators \cite{b12,b13}. This mirrors how
 quantum-cognitive models implement belief updates through channels and measurement-like
 operations \cite{b3,b8,b9}. The posterior category probability is then obtained by
-measuring the updated belief state (Section~\ref{sec:readout}).
+measuring the updated belief state (Section~\ref{sec:readout}). We use ``Bayesian'' here
+in the operational sense of belief-state updating under evidence---a prior state revised
+by a stimulus-conditioned evidence channel---rather than as an explicit symbolic
+inference over an enumerated hypothesis set with likelihoods.
 
 We provide two realizations of this learner. A fast \emph{pure-state} realization takes
 $\rho_0=\lvert 0\rangle\!\langle 0\rvert^{\otimes n}$ and a unitary evidence channel
@@ -178,7 +182,8 @@ quantum architecture search \cite{b16,b17}. The hardware cost of a masked circui
 number of two-qubit gates remaining \emph{after transpilation} to IBM's $5$-qubit
 \texttt{FakeManila} backend (including SWAPs inserted for the coupling map), computed by
 actually invoking Qiskit's transpiler \cite{b24}; it is deterministic and resolved per
-term (each active Heisenberg term costs two CNOTs, so the full circuit gives $N_{2q}=24$).
+term (under the transpiler basis and optimization settings used here, each active
+Heisenberg term costs two CNOTs, so the full circuit gives $N_{2q}=24$).
 The learning objective is
 \begin{equation}
 L(\theta,m) = \frac{1}{N}\sum_{k=1}^{N}\ell\big(y_k,\hat y(x_k;\theta,m)\big) + \lambda\, N_{2q}(m),
@@ -203,7 +208,8 @@ learner's cognitive capacity.
 \subsection{Optimization and Greedy Structured Compression}
 
 The continuous parameters $\theta$ (rotations and readout head) are trained by Adam with
-exact gradients from automatic differentiation through the belief-state simulation.
+exact gradients obtained in JAX by differentiating directly through the exact
+belief-state simulator (no parameter-shift rule or finite differences).
 Compression uses \emph{greedy structured pruning}: from the fully entangled circuit, we
 repeatedly remove the interaction term whose removal least increases training
 cross-entropy, retraining $\theta$ after each removal. This traces a trajectory of
@@ -216,10 +222,12 @@ against barren plateaus \cite{b18}.
 \subsection{Controllable Categorization Task}
 \label{sec:data}
 
-To expose rather than saturate the capacity boundary we use a similarity-structured
-categorization task in the spirit of the simplicity principle in human categorization
-\cite{b19}: stimuli are points in $[0,1]^2$ and the category is the parity of a
-checkerboard cell, $y=(\lfloor f x_0\rfloor + \lfloor f x_1\rfloor)\bmod 2$. Nearby
+To expose rather than saturate the capacity boundary we use a synthetic,
+similarity-structured \emph{checkerboard} categorization task inspired by the simplicity
+principle that Pothos and Chater study for unsupervised human categorization \cite{b19}
+(it is a controlled synthetic task, not their behavioral dataset): stimuli are points in
+$[0,1]^2$ and the category is the parity of a checkerboard cell,
+$y=(\lfloor f x_0\rfloor + \lfloor f x_1\rfloor)\bmod 2$. Nearby
 stimuli usually share a category (local similarity), but membership depends on the
 \emph{joint} configuration of both features, so the boundary requires the feature
 interaction only entanglement can provide. The frequency $f$ is a difficulty knob: $f=2$
@@ -237,7 +245,13 @@ difficulty we run five seeds; each produces a greedy frontier, a $\lambda$-selec
 operating point for $\lambda\in\{0,0.005,0.01,0.02,0.04,0.08,0.15\}$, and, at every
 interior budget, three random masks of matched sparsity as a connectivity-matched control.
 All accuracy, cross-entropy, and $N_{2q}$ values use the discrete deployed circuit and the
-real transpiled count, averaged over the five seeds. Code and logs are in the public
+real transpiled count, averaged over the five seeds. The software stack is Python~3.14,
+Qiskit~2.4.2, Qiskit~Aer~0.17.2, Qiskit~IBM~Runtime~0.47.0, JAX~0.10.2, and
+scikit-learn~1.9.0 (exact pins in \texttt{requirements.txt}). As a difficulty sanity
+check, standard classical classifiers on the identical splits confirm the frequency knob
+is a real difficulty axis (Appendix~\ref{app:classical}): a linear model stays at chance
+on every level, while kernel-SVM and MLP accuracy fall monotonically from easy to hard.
+Code and logs are in the public
 repository.\footnote{\url{https://github.com/zoraizmohammad/qb-learner-compression}}
 
 \section{Results and Data Analysis}
@@ -275,7 +289,8 @@ easier tasks have ample capacity and stay flat until the collapse at $N_{2q}=0$.
 \subsection{Effect of the Hardware-Aware Penalty}
 
 Table~\ref{tab:lambda} reports, for the hard task, the operating point selected by
-(\ref{eq:loss}) as $\lambda$ grows. For small penalties the learner keeps a moderately
+(\ref{eq:loss}) as $\lambda$ grows; the $\lambda=0$ row is the no-penalty ideal baseline,
+the point chosen on accuracy alone. For small penalties the learner keeps a moderately
 rich circuit ($N_{2q}\approx 10$); as $\lambda$ increases it prunes aggressively, reaching
 $N_{2q}=3.2$ at $\lambda=0.04$ with no loss of accuracy (a slight gain, $0.923\to0.933$),
 and only at the strongest penalty ($\lambda=0.15$, $N_{2q}=1.6$) does accuracy fall to
@@ -310,8 +325,11 @@ The frontier says \emph{how many} entanglers are needed; the ablation in
 Fig.~\ref{fig:ablation} and Table~\ref{tab:ablation} asks whether \emph{which} ones
 matter. At each budget we compare the learned (greedy) mask against random masks with the
 same number of active terms. On the hard task the learned mask wins at \emph{every}
-budget, by $4$--$12$ points, largest in the low-to-mid regime where structure is scarce
-and must be allocated well. In cognitive terms, capacity reductions that respect the task
+budget (Table~\ref{tab:ablation}), by roughly $6$--$12$ percentage points, largest in the
+low-to-mid regime where structure is scarce and must be allocated well. Resolved per
+seed rather than aggregated, the learned mask beats the matched random masks in $49$ of
+the $55$ paired (seed, budget) comparisons, with a mean advantage of $+0.083$ and a
+one-sided Wilcoxon signed-rank $p<10^{-7}$. In cognitive terms, capacity reductions that respect the task
 structure preserve belief updating, whereas unstructured loss of capacity removes the very
 interactions that carry the category boundary.
 
@@ -363,9 +381,10 @@ task, five seeds, $4096$ shots). The curves overlap across all budgets.}
 \subsection{Validation on a Physical Device}
 
 We then ran the trained circuits on a physical IBM Quantum processor (\texttt{ibm\_fez}, a
-$156$-qubit device), mapping the accuracy--complexity frontier on-device across five
-two-qubit budgets at $2048$--$4096$ shots. The outcome (Fig.~\ref{fig:hardware}) is
-decisive and \emph{reverses} the simulated picture. In exact simulation the frontier is
+$156$-qubit Heron device), mapping the accuracy--complexity frontier on-device across five
+two-qubit budgets at $2048$--$4096$ shots (run provenance---date, shots, transpiler
+settings---in Appendix~\ref{app:hw}). The outcome (Fig.~\ref{fig:hardware}) is clear in
+this controlled run and \emph{reverses} the simulated picture. In exact simulation the frontier is
 nearly flat; on hardware it slopes steeply downward as $N_{2q}$ grows---device accuracy
 holds at $0.81$ for the cheap circuits ($N_{2q}=2,6$), slips to $0.75$ at $N_{2q}=12$, and
 \emph{collapses to near chance} ($0.56$) at $N_{2q}=18,24$, where the full circuit's
@@ -451,8 +470,11 @@ Hard   & 0.872 & 0.844 & 0.883 & 0.817 & 0.511 \\
 
 \subsection{Cognitive Capacity and the Capacity Boundary}
 
-Reading the entangling structure as a proxy for cognitive capacity, the experiments locate
-a clear capacity boundary. A fully entangled belief register has more representational
+Throughout, ``cognitive capacity'' denotes task performance under this constrained
+belief-update and single-qubit-readout model---the learner's ability to represent and
+update the category rule---and not human working-memory capacity; the entangling structure
+of the evidence channel is its operational proxy. Reading that structure as cognitive
+capacity, the experiments locate a clear capacity boundary. A fully entangled belief register has more representational
 machinery than this categorization task needs: most of it can be pruned with no loss, and
 on the hardest task a moderately compressed learner is \emph{better} than the full one,
 because the surplus capacity was being overfit. Yet capacity cannot be removed entirely---a
@@ -473,9 +495,13 @@ whereas unstructured reductions are not---a distinction invisible to a pure gate
 
 \subsection{Scope and Future Directions}
 
-The study is deliberately controlled: a two-qubit belief register, an exactly-simulated
-unitary evidence channel, and a controllable synthetic task make every claim measurable and
-reproducible, and the whole pipeline already runs end-to-end on physical IBM hardware
+The study is deliberately controlled, and its boundaries are design choices rather than
+gaps: a two-qubit belief register, an exactly-simulated evidence channel, a trainable
+single-qubit-Pauli readout, a controllable synthetic (not human-subject) task, and a
+device-validation campaign sized to an open-plan shot budget together make every claim
+measurable, reproducible, and cheap to re-run, while the post-transpile two-qubit count is
+used as a deliberate, device-grounded proxy for two-qubit error. Within that scope every
+result holds end-to-end, and the whole pipeline already runs on physical IBM hardware
 (Section~\ref{sec:results}). The framework extends naturally to multi-qubit belief
 registers and higher-dimensional stimuli (where the difficulty family suggests entangling
 capacity will matter more), to richer non-unital evidence channels that drive the belief
@@ -501,9 +527,9 @@ ZX-calculus methods \cite{b22,b23} and the Qiskit transpiler \cite{b24}; unlike 
 penalty is folded into the learning objective and coupled to a per-term mask, which is what
 lets the learned-versus-random ablation isolate the role of structure. Warm-starting and
 related strategies \cite{b28} are complementary directions for the optimization itself. To
-our knowledge, linking a quantum Bayesian learner's cognitive capacity to its post-transpile
-circuit capacity---and validating the trade-off on real hardware---has not been examined
-before.
+our knowledge, no prior work directly links a quantum Bayesian learner's cognitive capacity
+to its post-transpile circuit capacity and validates the resulting trade-off on real
+hardware.
 
 \section{Conclusion}
 
@@ -521,6 +547,68 @@ accurate, so on real hardware compression is what makes the learner usable at al
 result is a small but concrete case study linking cognitive capacity and quantum circuit
 capacity in one experiment, and a demonstration that quantum models of cognition can be made
 to fit---and even prefer---the limits of present-day quantum hardware.
+
+\appendices
+
+\section{Physical-Device Run Provenance}
+\label{app:hw}
+
+Table~\ref{tab:hwmeta} records the settings behind the \texttt{ibm\_fez} results
+(Section~\ref{sec:results}, Fig.~\ref{fig:hardware}). The deployed model is bit-identical
+to the simulator model (the device backend reproduces the statevector learner to
+$<10^{-9}$); raw logs and machine-readable outputs are in the repository
+(\texttt{results\_v2/hardware/}).
+
+\begin{table}[H]
+\centering
+\caption{Provenance of the two \texttt{ibm\_fez} runs. Both use Heron hardware on the open
+plan, transpiler optimization level~1, fixed \texttt{seed\_transpiler}, and the default
+\texttt{EstimatorV2} primitive options (no explicitly configured error mitigation).}
+\label{tab:hwmeta}
+\begin{tabular}{lcc}
+\toprule
+Field & Frontier run & Endpoint run \\
+\midrule
+Backend & \texttt{ibm\_fez} & \texttt{ibm\_fez} \\
+Date & 2026-06-20 & 2026-06-20 \\
+Eval points & 16 & 40 \\
+Shots & 2048 & 4096 \\
+Budgets $N_{2q}$ & 2,6,12,18,24 & 24, 6 \\
+Opt.\ level & 1 & 1 \\
+Mitigation & defaults only & defaults only \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Classical Baselines}
+\label{app:classical}
+
+To anchor the easy/medium/hard difficulty levels outside the quantum model, we trained
+standard classical classifiers on the \emph{identical} data and train/test splits (200
+stimuli, $70/30$, five seeds). Table~\ref{tab:classical} reports mean test accuracy. A
+linear model (logistic regression) sits at chance on every level, confirming the task
+genuinely requires the joint-feature interaction that entanglement supplies; kernel-SVM
+and MLP accuracy fall monotonically from easy to hard, confirming the checkerboard
+frequency is a meaningful difficulty axis. The quantum learner is competitive with the
+strong classical models while exposing the compression frontier that is the paper's
+subject; beating these baselines is not the objective.
+
+\begin{table}[H]
+\centering
+\caption{Mean test accuracy (five seeds, identical splits) on the checkerboard task.
+Classical: logistic regression, RBF-SVM, MLP. Quantum: full circuit ($N_{2q}=24$) and the
+best compressed operating point. Chance is $0.5$.}
+\label{tab:classical}
+\begin{tabular}{lccccc}
+\toprule
+Task & LogReg & RBF-SVM & MLP & Full QBL & Best comp. \\
+\midrule
+Easy   & 0.453 & 0.940 & 0.967 & 0.940 & 0.970 \\
+Medium & 0.533 & 0.860 & 0.910 & 0.947 & 0.973 \\
+Hard   & 0.550 & 0.647 & 0.857 & 0.873 & 0.927 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \begin{thebibliography}{00}
 
@@ -601,12 +689,12 @@ M.~S. Jattana, D.~Bassirian, C.~Huerta Alderete, and P.~J. Pemberton-Ross,
 \textit{Frontiers in Physics}, vol.~10, p.~907160, 2022.
 
 \bibitem{b16}
-Y.~Du, B.~Li, X.~Cao, Y.~Liu, T.~Huang, and D.~Tao,
+Y.~Du, T.~Huang, S.~You, M.-H.~Hsieh, and D.~Tao,
 ``Quantum circuit architecture search for variational quantum algorithms,''
 \textit{npj Quantum Information}, vol.~8, p.~62, 2022.
 
 \bibitem{b17}
-Y.~Huang, S.~Jin, Q.~Zeng, and L.~Shao,
+Y.~Huang, S.~Jin, B.~Zeng, and Q.~Shao,
 ``Adaptive diversity-based quantum circuit architecture search,''
 \textit{Physical Review Research}, vol.~6, p.~033033, 2024.
 
