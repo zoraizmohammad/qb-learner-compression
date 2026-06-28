@@ -547,3 +547,31 @@ Real issues found and fixed:
 - **Env note (unchanged blocker):** the iCloud-synced `.venv` still hangs on `import numpy`
   (ECANCELED); ran the new numpy/sklearn/scipy work from a local-disk venv `/tmp/qbwork`.
   Still recommend moving the repo off `~/Desktop`.
+
+### 2026-06-27 (cont.) — Second reviewer pass: wording defensibility + one new citation
+Review rated the paper Accept (workshop level); remaining items were mostly wording, plus a
+consistency audit. **Consistency audit run first and came back clean** (5 seeds pure-state /
+3 density, 200 stimuli, D=4, 12 maskable terms, $N_{2q}=24$, shots 2048/4096 — no
+contradictions). Fixes applied:
+- **Softened the cognitive overclaim to measured quantities**: "stops being able to learn" →
+  "can no longer accurately represent the task" (abstract, intro question, conclusion); intro
+  trade-off reframed as "task performance ... interpreted through the lens of cognitive
+  capacity"; conclusion "even prefer" → "can be adapted to---and on real hardware even
+  benefit from". Added an explicit one-line disclaimer: *we do not claim the task/learner
+  models human categorization behavior*.
+- **Optimization-stability note** added (non-convex landscape, local optima, five-seed
+  averaging mitigates-not-eliminates, reflected in the reported std).
+- **New citation b29** (web-verified): Sim, Romero, Gonthier, Kunitsa, "Adaptive
+  pruning-based optimization of parameterized quantum circuits," Quantum Sci.\ Technol.\ 6,
+  025019 (2021) — the missing QML-pruning reference; cited in Methods and Related Work.
+- **Hardware sampling sentence** added (honest): each device point is a *single* trained
+  model (seed 0) in one job on 16 test stimuli at 2048 shots; endpoints use 40 stimuli at
+  4096; five budgets are device-cost-limited. Relabeled "16/40 points" → "test stimuli" to
+  kill the ambiguity a reviewer hit (they read "points" as x-axis budgets).
+- **Style**: "genuinely" 6×→1×; bolded the best per-row value in App.\ B (Table V); varied
+  one "free or beneficial".
+- **Not done (with reason): replot Fig.\ 4 with the "40-point" frontier.** The reviewer
+  misread "40 points" as 40 budgets; it is 40 test *stimuli* at 2 endpoint budgets. The
+  5-budget device frontier is QPU-cost-limited and there is no 40-budget frontier data;
+  adding it would need new paid device runs. Clarified the wording instead.
+- Paper recompiles clean (exit 0, no undefined refs), 29 references, PDF ~516 KB.
