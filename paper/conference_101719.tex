@@ -217,8 +217,12 @@ cross-entropy, retraining $\theta$ after each removal. This traces a trajectory 
 circuits from $N_{2q}=24$ down to $0$---the accuracy--complexity frontier---and the
 hardware-aware objective (\ref{eq:loss}) selects an operating point along it for each
 $\lambda$. The greedy mechanism is stable and aligned with structured architecture search
-\cite{b16,b17}; the shallow, small-register design keeps optimization well-conditioned
-against barren plateaus \cite{b18}.
+\cite{b16,b17} and pruning-based circuit optimization \cite{b29}; the shallow,
+small-register design keeps optimization well-conditioned against barren plateaus
+\cite{b18}. Because the loss landscape is non-convex, different mask configurations can in
+principle converge to different local optima; averaging over five random seeds---each
+greedy step warm-started from the previous solution---mitigates, but does not eliminate,
+this source of variability, which the reported standard deviations make explicit.
 
 \subsection{Controllable Categorization Task}
 \label{sec:data}
@@ -526,9 +530,11 @@ quantum-circuit embeddings of probabilistic inference \cite{b8,b9}, with similar
 categorization \cite{b19} as the task template and the quantum-channel formalism
 \cite{b12,b13,b26} grounding the evidence-update mechanism. From circuit compilation it
 takes the dominance of two-qubit error \cite{b7,b10} and task-agnostic optimizers such as
-ZX-calculus methods \cite{b22,b23} and the Qiskit transpiler \cite{b24}; unlike those, our
-penalty is folded into the learning objective and coupled to a per-term mask, which is what
-lets the learned-versus-random ablation isolate the role of structure. Warm-starting and
+ZX-calculus methods \cite{b22,b23} and the Qiskit transpiler \cite{b24}, as well as
+pruning-based compression of parameterized quantum circuits \cite{b29}; unlike those, our
+penalty is folded into the learning objective and coupled to a per-term mask resolved by a
+real post-transpile two-qubit count, which is what lets the learned-versus-random ablation
+isolate the role of structure. Warm-starting and
 related strategies \cite{b28} are complementary directions for the optimization itself. To
 our knowledge, no prior work directly links a quantum Bayesian learner's cognitive capacity
 to its post-transpile circuit capacity and validates the resulting trade-off on real
@@ -757,6 +763,11 @@ S.~Sim, P.~D. Johnson, and A.~Aspuru-Guzik,
 D.~J. Egger, J.~Mare\v{c}ek, and S.~Woerner,
 ``Warm-starting quantum optimization,''
 \textit{Quantum}, vol.~5, p.~479, 2021.
+
+\bibitem{b29}
+S.~Sim, J.~Romero, J.~F. Gonthier, and A.~A. Kunitsa,
+``Adaptive pruning-based optimization of parameterized quantum circuits,''
+\textit{Quantum Science and Technology}, vol.~6, no.~2, p.~025019, 2021.
 
 \end{thebibliography}
 
