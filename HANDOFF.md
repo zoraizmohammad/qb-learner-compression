@@ -512,3 +512,38 @@ NOTE: the API token appeared in chat once — it should be rotated at quantum.cl
   Primary hardware figure is now the on-device frontier. Compiles clean (4 figures).
   Integrity boundary held: did NOT reintroduce false mixed-state/Kraus mechanism claims; the
   density-matrix/channel language is used at the level it is actually implemented.
+
+### 2026-06-27 — External reviewer pass: verified claims, hardened paper, added baselines/stats
+Acted on a 16-point external review. First **verified every consistency claim against the
+repo/logs** (the review's biggest worry — "repo describes a different project" — was FALSE:
+`src/data.py:get_pothos_chater_checker` + `CHECKER_DIFFICULTY` are the checkerboard task, and
+the CSVs reproduce the paper exactly: λ=0 row N2q=9.6/acc 0.923 ✓, hardware 0.600/0.825 ✓).
+Real issues found and fixed:
+- **Citations b16, b17 had wrong author lists** (web-verified): b16 → Y.~Du, T.~Huang, S.~You,
+  M.-H.~Hsieh, D.~Tao; b17 → Y.~Huang, S.~Jin, B.~Zeng, Q.~Shao. Fixed both.
+- **Abstract/ablation "4–12 points"** → "≈6–12 percentage points" (matches Table II min Δ=+0.061).
+- **Paired statistic added** (honest): on hard, learned beats random in **49/55** paired
+  (seed,budget) comparisons, mean +0.083, one-sided Wilcoxon p<1e-7 — NOT "all", as the
+  per-seed data shows. `scripts/paired_stats.py`.
+- **Classical baselines added** (`scripts/classical_baselines.py`, identical splits): LogReg
+  at chance on all levels (0.45–0.55 → task truly needs feature interaction), RBF-SVM
+  0.94/0.86/0.65, MLP 0.97/0.91/0.86 (monotone easy→hard → difficulty knob is real). New
+  Appendix B / Table V. `results_v2/classical_baselines.csv`.
+- **Hardware provenance**: new `results_v2/hardware/RUN_METADATA.md` + Appendix A / Table IV
+  (backend, date 2026-06-20, shots, opt level 1, seed_transpiler 42, EstimatorV2 defaults;
+  job IDs not retained — noted).
+- **Methods precision**: named JAX autodiff; "Bayesian" operational-sense caveat; cost-count
+  "under the transpiler basis/settings used here"; software-versions line; λ=0 labelled the
+  no-penalty baseline; "cognitive capacity" defined operationally (not working memory).
+- **Tone**: "decisive"→"clear in this controlled run"; "has not been examined before"→"we are
+  not aware of prior work / no prior work directly links". Kept "necessary" (hardware data
+  backs it). **Judgment call on review item #10:** the user explicitly forbade a defeatist
+  "Limitations" section, so scope boundaries (2 qubits, synthetic task, classical readout,
+  device-run size, N2q-as-proxy) were folded into the **Scope** paragraph as deliberate design
+  choices, not an apologetic section.
+- **Reproducibility**: `scripts/reproduce_paper.sh` (one-shot) + README "artifact → command" map.
+- Paper recompiles clean via tectonic → `paper/conference_101719.pdf` (514 KB, 6 figs + 5
+  tables incl. 2 new appendix tables; all cross-refs resolve).
+- **Env note (unchanged blocker):** the iCloud-synced `.venv` still hangs on `import numpy`
+  (ECANCELED); ran the new numpy/sklearn/scipy work from a local-disk venv `/tmp/qbwork`.
+  Still recommend moving the repo off `~/Desktop`.
