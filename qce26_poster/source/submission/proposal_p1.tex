@@ -1,0 +1,78 @@
+\documentclass[10pt,conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\begin{document}
+
+\title{Hardware-Aware Quantum Bayesian Learner Compression:\\ Linking Human Belief Updating to NISQ Circuit Complexity\\
+\large\normalfont\itshape IEEE Quantum Week (QCE26) --- Poster Proposal, Phase 2 (Sections 1--4)}
+
+\author{
+\IEEEauthorblockN{Mohammad Zoraiz}
+\IEEEauthorblockA{
+\textit{Pratt School of Engineering, Duke University} \\
+Electrical Engineering, Physics, and Computer Science \\
+Durham, NC, USA \\
+mz248@duke.edu}
+}
+
+\maketitle
+
+\begin{abstract}
+This work connects quantum models of cognition with the engineering constraints of
+near-term quantum hardware. Bayesian theories treat human learning as belief updating over
+structured hypotheses, and quantum cognition represents belief states in Hilbert space with
+evidence acting through quantum channels. We instantiate a small quantum Bayesian learner: a
+belief state on a two-qubit register, a prior, and a stimulus-dependent evidence channel that
+updates the belief on a synthetic similarity-structured categorization task inspired by the
+simplicity principle of Pothos and Chater, with the posterior category read out by
+measurement. To tie this cognitive picture to real devices, we make the learner a
+hardware-efficient variational circuit and add a hardware-aware penalty equal to the number
+of two-qubit gates that survive transpilation to IBM's FakeManila coupling map, then compress
+the circuit by greedy structured pruning of individual Heisenberg interaction terms. The
+central question is where the capacity boundary lies: how much entangling structure can be
+removed before the learner can no longer represent the task. Across three difficulty levels
+and five seeds we trace accuracy--complexity frontiers and find that structured compression is
+essentially free, and on the hardest task beneficial, while removing all entanglers collapses
+the learner to chance. Learned masks beat random masks at every matched budget. Finally, on a
+physical IBM device the full circuit collapses to near chance while the compressed circuit
+retains accuracy: on real NISQ hardware, hardware-aware compression is not merely economical
+but necessary.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Quantum cognition, Bayesian learning, variational quantum circuits, hardware-efficient ansatz,
+NISQ devices, circuit compression, quantum machine learning, quantum channels.
+\end{IEEEkeywords}
+
+\section{Poster Authors and Contact}
+\textbf{Mohammad Zoraiz} (sole author; \emph{corresponding author} and \emph{presenter}).
+Pratt School of Engineering, Duke University, Durham, NC, USA. Email:
+\texttt{mz248@duke.edu}. ORCID: \emph{(optional --- add if available).} The title above is the
+poster title (CFP item~1); this section is the author/contact information (CFP item~2); the
+abstract above is the 200--250\,word poster abstract (CFP item~3); the relevance statement
+below is CFP item~4.
+
+\section{Poster Relevance to QCE26 Topics}
+This poster is directly relevant to several QCE26 tracks. It is primarily a contribution to
+\emph{Quantum Machine Learning} and \emph{Quantum Algorithms \& Information}: the learner is a
+trainable, parameterized variational quantum circuit optimized by exact gradients, and the
+compression study is a task-specific instance of quantum architecture search. It speaks to
+\emph{Quantum Computing} and \emph{Quantum Systems Engineering} through its hardware-aware
+cost---a real post-transpile two-qubit gate count on an IBM coupling map---and its validation
+on a physical IBM Quantum device, directly addressing the dominance of two-qubit error on NISQ
+hardware. The density-operator and quantum-channel formulation, with a maximally mixed prior
+and a non-unital evidence update, connects to \emph{Quantum Generative AI} themes such as
+quantum Boltzmann-style mixed-state models, while the per-term pruning of entangling
+interactions contributes to \emph{Quantum Software Engineering} via circuit compression,
+transpilation, and architecture optimization. By linking belief updating in quantum cognition
+to circuit capacity and validating the resulting trade-off on real hardware, the work offers a
+cross-disciplinary perspective of broad interest to the quantum computing and engineering
+community. The preliminary poster follows on the next page (CFP Section~5); the accompanying
+two-page extended abstract is submitted as a separate PDF (CFP Section~6).
+
+\end{document}
