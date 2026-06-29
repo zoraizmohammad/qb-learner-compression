@@ -1,0 +1,1272 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+% The preceding line is only needed to identify funding in the first footnote. If that is unneeded, please comment it out.
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}  % default is ~20pt
+\setlength{\floatsep}{6pt plus 2pt minus 2pt}      % space between floats
+
+% For in-text / [H] floats
+\setlength{\intextsep}{6pt plus 2pt minus 2pt}     % default is ~12pt
+
+% Caption spacing (optional but helpful)
+\setlength{\abovecaptionskip}{4pt}                 % space above caption
+\setlength{\belowcaptionskip}{0pt} 
+\begin{document}
+
+\title{
+Hardware-Aware Quantum Bayesian Learner Compression: Linking Belief Updating to NISQ Circuit Complexity
+% \thanks{This work was completed as part of the final project for ECE 420: Quantum Engineering at Duke University: \url{https://github.com/zoraizmohammad/qb-learner-compression}
+}
+}
+\author{
+\IEEEauthorblockN{Mohammad Zoraiz}
+\IEEEauthorblockA{
+\textit{Pratt School of Engineering} \\
+\textit{Duke University} \\
+Electrical Engineering, Physics, and Computer Science \\
+Durham, NC, USA \\
+mz248@duke.edu
+}
+}
+
+
+\maketitle
+
+\begin{abstract}
+We study a small quantum Bayesian learner that performs binary categorization on a Pothos--Chater style toy dataset, with the aim of understanding how far its ``cognitive'' capacity can be compressed under realistic hardware constraints. The learner's belief state is a density matrix on a two-qubit register, and each stimulus is associated with a simple stimulus-dependent quantum channel that implements a Bayesian-style update of this state. 
+
+The update dynamics are realized by a variational circuit built from hardware-efficient layers of single-qubit rotations and a Heisenberg-type two-qubit block implemented as a product of \(R_{XX}\), \(R_{YY}\), and \(R_{ZZ}\) gates. A hardware-aware objective combines binary cross-entropy on the categorization task with a penalty proportional to the number of two-qubit gates that remain after transpiling the circuit to Qiskit’s \texttt{FakeManila} backend, so that the cost term directly reflects the CNOT load induced by the device’s coupling map. Using this objective, we train fully entangled learners and mask-compressed variants in which a binary mask selects which of the three Heisenberg interaction terms are active; the same sparsity pattern is also applied with randomly chosen masks to provide a connectivity-matched control.
+
+Across a sweep of regularization strengths, the experiments trace an empirical accuracy--complexity frontier. Fully entangled baselines with three active interaction terms and \(N_{2q}=6\) two-qubit gates achieve test accuracies around \(0.75\)–\(0.80\). Learned sparse masks that keep two of the three interactions active reduce the post-transpile gate count to \(N_{2q}=4\) (a \(\sim 33\%\) reduction) while maintaining accuracies in the \(0.72\)–\(0.76\) range. Random masks with the same sparsity incur much larger drops, with accuracies typically near \(0.63\)–\(0.69\). These results show that, for this toy concept-learning task, a modest and \emph{structured} reduction in entangling structure can significantly lower hardware cost without collapsing the learner's ability to update beliefs, whereas unstructured pruning substantially degrades performance.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Quantum machine learning, Bayesian updating, Quantum cognition, Variational quantum circuits, Hardware-efficient ansatz, NISQ devices, Quantum channels, Circuit compression
+\end{IEEEkeywords}
+
+\section{Introduction}
+
+Noisy intermediate-scale quantum (NISQ) devices provide access to tens to hundreds of qubits, but gate errors, decoherence, and restricted connectivity limit the depth and structure of circuits that can be run reliably \cite{b7}. Variational quantum algorithms (VQAs) address these constraints by combining parameterized quantum circuits with classical optimization \cite{b4,b6}. In this setting, the choice of ansatz is crucial. Hardware-efficient ansätze, built from layers of single-qubit rotations and native two-qubit entanglers tailored to a device’s coupling graph, have been demonstrated on small molecules and quantum magnets \cite{b4} and analyzed in terms of expressivity, trainability, and sensitivity to noise \cite{b5}. At the same time, two-qubit gates remain the dominant source of error on many near-term platforms, so reducing their number without destroying task performance is a central practical objective \cite{b7,b10}.
+
+In parallel, Bayesian models have become a standard framework for understanding human learning and cognition. In these models, a learner maintains a distribution over hypotheses and updates that distribution as new evidence arrives \cite{b1,b2,b11}. Bayesian accounts have been used to explain concept learning, language acquisition, and other forms of structured inference \cite{b1,b11}. Quantum cognition extends this idea by representing belief states in Hilbert space and using the mathematics of quantum theory to model order effects, context dependence, and interference in judgment and decision making \cite{b3}. Related work has shown how Bayesian networks and probabilistic models can be embedded in quantum circuits, encoding classical distributions and conditional dependencies into quantum states that are manipulated by unitary or measurement-based operations \cite{b8,b9}.
+
+This work instantiates these ideas in a small, concrete setting. We construct a quantum Bayesian learner that performs a simple binary categorization task inspired by the Pothos--Chater framework, using a low-dimensional stimulus space and a geometric category boundary. The learner’s belief state is represented by a density matrix on a two-qubit register, and each stimulus is mapped to a stimulus-dependent quantum channel that implements a Bayesian-style update of this state. The update dynamics are realized by a parameterized circuit composed of single-qubit rotations and a Heisenberg-type two-qubit block implemented as a product of \(R_{XX}\), \(R_{YY}\), and \(R_{ZZ}\) gates of the form
+\(\exp[-i(\alpha X X + \beta Y Y + \gamma Z Z)]\), closely related to spin interactions used in variational eigensolvers \cite{b4,b17}. The ansatz respects the connectivity of a target backend by restricting entangling operations to qubit pairs compatible with the \texttt{FakeManila} coupling map.
+
+To connect this cognitive-style learner to realistic hardware, we introduce a hardware-aware compression objective. In addition to the binary cross-entropy loss on the Pothos--Chater task, the objective includes a penalty proportional to the number of two-qubit gates that remain after transpiling the update circuit to Qiskit’s \texttt{FakeManila} backend. This choice is motivated by theoretical and experimental work showing that two-qubit gates contribute disproportionately to overall error and that specialized gate constructions or optimized layouts can improve performance by lowering the entangling overhead \cite{b7,b10}. We train both fully entangled and mask-compressed versions of the learner, where a binary mask selects which of the three Heisenberg interaction terms are active, and compare them to baselines that rely only on compiler-level optimization or randomly chosen sparse masks with the same two-qubit budget. Across a sweep of regularization strengths, this setup yields an empirical trade-off between learning accuracy and post-transpile two-qubit gate count, linking a small quantum Bayesian learning task grounded in models of concept learning to a variational circuit design problem explicitly tied to the geometry and error profile of NISQ devices.
+
+Taken together, these modeling choices frame a concrete simulation question for this project: given a small Pothos--Chater style categorization task, how well can a hardware-efficient, Heisenberg-type variational ansatz support Bayesian-style belief updating when it is explicitly penalized for its transpiled two-qubit gate count? In other words, the approach treats the learner as a hybrid quantum-classical model whose ``cognitive capacity'' is controlled not only by the structure of the belief update channel, but also by the depth and entangling pattern of the underlying circuit, in direct analogy with the variational algorithms studied in this course.
+
+\section{Methods and Ansatz}
+
+\subsection{Belief Representation and Quantum Evidence Channels}
+
+The learner’s internal state at time $t$ is represented as a density operator $\rho_t$ on an $n$-qubit Hilbert space $\mathcal{H}^{\otimes n}$. Following the standard framework for quantum channels, the effect of an observed stimulus $x$ is modeled as a completely positive (CP) map $\mathcal{E}_x$ acting on $\rho_t$ \cite{b12,b13}. In Kraus form, such a map can be written as
+\begin{equation}
+\mathcal{E}_x(\rho) = \sum_k E_{x,k}\, \rho\, E_{x,k}^\dagger,
+\qquad 
+\sum_k E_{x,k}^\dagger E_{x,k} \le \mathbb{I},
+\end{equation}
+where the operators $E_{x,k}$ are Kraus operators associated with stimulus $x$ \cite{b12,b13}. The quantum Bayesian update rule for the belief state is then
+\begin{equation}
+\rho_{t+1} = \frac{\mathcal{E}_x(\rho_t)}{\mathrm{Tr}\!\left[\mathcal{E}_x(\rho_t)\right]},
+\end{equation}
+which mirrors the way quantum-cognitive models implement Bayesian-style updating through Lüders projections or more general channels \cite{b3,b4,b9}.
+
+In the experiments, we work with small systems ($n \in \{2,3\}$) and initialize the prior as the maximally mixed state, $\rho_{0} = \mathbb{I}/2^n$. For each stimulus $x$ in the categorization task, we instantiate a simple one-parameter family of channels whose effective ``update strength'' depends on the features of $x$. Concretely, the evidence update is implemented as a projective-type channel with a tunable mixing parameter that interpolates between a weak perturbation of the prior state and a stronger, near-projective update. This choice keeps the channel design transparent while still allowing different stimuli to push the belief state in different directions within the state space.
+
+\subsection{Pothos--Chater Inspired Toy Dataset for Categorization}
+\label{sec:pc_dataset}
+
+To evaluate the behavior of the quantum Bayesian learner on a controlled classification task, 
+we adopt a Pothos--Chater style dataset \cite{b19} implemented in \texttt{data.py}. In this construction, 
+stimuli are modeled as points in a low-dimensional psychological feature space, and category membership is determined by simple geometric structure rather than high-dimensional noise. This makes the paradigm well suited for experiments focused on belief-updating dynamics rather than large-scale benchmark performance.
+
+The specific dataset used in all reported experiments is the ``large'' variant
+\texttt{get\_pothos\_chater\_large()}, which generates two Gaussian-like clusters in a two-dimensional
+feature space:
+\begin{itemize}
+    \item Category~A stimuli are sampled around a prototype at $(0.23, 0.27)$,
+    \item Category~B stimuli are sampled around a prototype at $(0.77, 0.73)$,
+\end{itemize}
+with isotropic standard deviation $0.11$ in each dimension and $20$ points per category. The resulting
+matrix $X \in [0,1]^{40 \times 2}$ is obtained by vertically stacking the category-specific samples, and the label vector $y \in \{0,1\}^{40}$ is defined by assigning $y_k = 0$ for the $20$ Category~A points and $y_k = 1$ for the $20$ Category~B points. The sampling seeds are fixed so that the dataset is deterministic across runs. 
+
+Stimulus features are normalized to $[0,1]$ and encoded into the circuit via single-qubit rotations; the same features also parameterize the strength and orientation of the evidence channel described above. For each experiment, the dataset is split into training and test sets using a held-out partition with a fixed random seed. Because the two categories are exactly balanced, chance performance corresponds to $0.5$ accuracy, providing a simple baseline against which to interpret the empirical results.
+
+\subsection{Variational Ansatz and Heisenberg-Type Entanglers}
+
+To implement the evidence updates on a programmable quantum processor or simulator, we embed the channels inside a parameterized circuit $U(\theta, m)$. The circuit either acts directly on the belief register or forms part of a larger update block that prepares, entangles, and evolves the state. The ansatz follows a layered, hardware-efficient structure: each layer consists of single-qubit rotations on all qubits followed by a pattern of two-qubit entangling gates whose connectivity respects a chosen device coupling graph. This design is consistent with hardware-efficient ansätze widely used in VQE and related variational methods \cite{b4,b5,b6}.
+
+Because the course emphasizes two-body spin Hamiltonians, we employ entangling blocks inspired by Heisenberg-type interactions, which are commonly used in VQE simulations of spin chains and lattice models \cite{b14,b15,b16}. A single entangling block acting on qubits $i$ and $j$ is defined as
+\begin{equation}
+U_{ij}(\alpha,\beta,\gamma)
+= \exp\!\left[- i\left(\alpha X_i X_j + \beta Y_i Y_j + \gamma Z_i Z_j\right)\right],
+\end{equation}
+where $X_i$, $Y_i$, and $Z_i$ are Pauli operators acting on qubit $i$, and $(\alpha,\beta,\gamma)$ are trainable parameters. In Qiskit, this block is realized using native $R_{XX}$, $R_{YY}$, and $R_{ZZ}$ gates with rotation angles corresponding to these parameters. 
+
+For the main experiments, the belief register consists of $n=2$ qubits and the ansatz depth is $D=3$ layers. Each layer applies single-qubit $R_X$ and $R_Z$ rotations on both qubits, followed by a single Heisenberg-type entangling block on the qubit pair, decomposed into up to three two-qubit interaction terms implemented as $R_{XX}$, $R_{YY}$, and $R_{ZZ}$ gates in a layout compatible with IBM’s 5-qubit \texttt{FakeManila} device. Additional exploratory baselines use a slightly deeper circuit (depth $D=4$) and a more expressive three-qubit ansatz; the corresponding compressed versions of these architectures are included in the summary tables but are not required for the core trade-off results.
+
+\subsection{Masked Structure and Hardware-Aware Loss}
+
+A key feature of this project is that the entangling structure is not fixed. We introduce a binary mask tensor $m$ with entries $m_{\ell,p} \in \{0,1\}$ indicating whether the two-qubit interaction term $p \in \{\mathrm{XX},\mathrm{YY},\mathrm{ZZ}\}$ in layer $\ell$ is active. For a given set of continuous parameters $\theta$ and mask $m$, the ansatz $U(\theta,m)$ is obtained by skipping all interaction terms satisfying $m_{\ell,p} = 0$. This produces a small-scale circuit architecture search problem, similar in spirit to quantum architecture search (QAS) techniques that discover PQC structures automatically \cite{b16,b17}, but here applied in a controlled and task-specific way.
+
+To evaluate performance, we combine task accuracy with a hardware-aware penalty based on the number of transpiled two-qubit gates. For a dataset $\{(x_k,y_k)\}_{k=1}^N$, the learning objective is
+\begin{equation}
+\mathcal{L}(\theta,m)
+= \frac{1}{N}\sum_{k=1}^N \ell\!\left(y_k, \hat{y}(x_k;\theta,m)\right)
++ \lambda\, C_{\mathrm{2q}}\!\left(U(\theta,m)\right),
+\end{equation}
+where $\ell$ is the per-sample classification loss (binary cross-entropy), $\hat{y}(x_k;\theta,m)$ is the predicted label derived from the post-update belief state, and $C_{\mathrm{2q}}(U)$ counts the number of two-qubit gates in the circuit \emph{after transpilation} to the \texttt{FakeManila} coupling map. Because the transpiler may introduce additional two-qubit operations (e.g., SWAP gates) due to limited connectivity, $C_{\mathrm{2q}}$ serves as a realistic proxy for hardware noise under NISQ conditions \cite{b7,b10}. 
+
+In the two-qubit ansatz, there are three potential two-qubit interaction terms per layer, so the mask defines a sparsity level
+\[
+s = \frac{\text{number of active interaction terms}}{\text{number of possible interaction terms}} \in \{1, 2/3, 1/3, 0\},
+\]
+and a corresponding post-transpile cost $N_{2q}$ that typically lies between $3$ and $6$ CNOTs in the experiments.
+
+\subsection{Optimization and Regularization}
+
+The continuous parameters $\theta$ are trained using a classical optimizer (Adam for the main runs, with learning rates specified in the YAML files), while the binary mask $m$ is updated via a simple pruning rule. Training proceeds for a fixed number of iterations (100 in all reported experiments). For compressed configurations, the mask is initialized in a dense state (all interaction terms active, $s=1$), and pruning is triggered according to a schedule that either evaluates candidate removals periodically or applies a pre-specified pattern at designated iterations, depending on the configuration (\texttt{fixed}, \texttt{gentle}, or \texttt{v2}). In all cases, the goal of pruning is to reduce $C_{\mathrm{2q}}(U)$ while keeping the overall loss $\mathcal{L}$ from increasing significantly.
+
+To study the effect of the regularization strength, we sweep $\lambda$ over the set
+\[
+\lambda \in \{0,\;10^{-3},\;10^{-2},\;0.05,\;0.10,\;0.20\},
+\]
+and record the final test accuracy, cross-entropy loss, and two-qubit cost for each setting. Additional runs compare learned masks to random masks with the same sparsity, isolating the effect of mask structure from the effect of gate count alone. Because barren plateaus can arise in deep or overly expressive ansätze \cite{b18}, the experiments focus on shallow circuits ($D=3$ or $4$) and small registers ($n=2$ or $3$) to maintain stable optimization.
+\section{Experimental Trials}
+
+All experiments were run using the open-source implementation in the main repository\footnote{\url{https://github.com/zoraizmohammad/qb-learner-compression}} together with the configuration files and scripts in the companion \texttt{experiments} directory\footnote{\url{https://github.com/zoraizmohammad/qb-learner-compression/tree/main/experiments}}. Each YAML configuration specifies the optimizer, learning rate, circuit depth, qubit count, regularization weight $\lambda$, pruning schedule, and evidence channel strength. A unified experiment runner loads these descriptions, constructs the learner, executes a fixed-length training loop (100 gradient steps), and logs both per-iteration traces and final summary metrics to CSV.
+
+The model is tested on the Pothos--Chater style dataset described in Section~\ref{sec:pc_dataset}, with features normalized to $[0,1]^2$ and a balanced distribution of category labels. Most trials use a two-qubit, depth-three ansatz with Heisenberg-type entangling blocks, and a subset of runs explores increased depth ($D=4$) and a more expressive three-qubit architecture. In all cases, the dataset is partitioned into training and test splits using a fixed random seed so that results are comparable across configurations.
+
+The baseline set comprises:
+\begin{itemize}
+    \item a \emph{diagnostic baseline} with no hardware penalty ($\lambda = 0$) and a fully active entangling pattern, which serves as an ``ideal'' reference,
+    \item a \emph{default baseline} with $\lambda = 10^{-2}$ and the same two-qubit pattern,
+    \item baseline variants that adjust the optimizer (e.g., Adam), evidence channel strength, and circuit depth (e.g., depth $D=4$),
+    \item an \emph{expressive baseline} with three qubits and a denser entangling layout.
+\end{itemize}
+All of these baselines retain the full entangling structure and, after transpilation to the \texttt{FakeManila} backend, incur a two-qubit gate cost of $N_{2q} = 6$.
+
+Compressed models activate only a subset of the available two-qubit interaction terms using binary masks. The main compressed configurations include:
+\begin{itemize}
+    \item a default compressed learner with a learned sparse mask,
+    \item \texttt{fixed}, \texttt{gentle}, and \texttt{v2} pruning schedules that differ in how and when interaction terms are removed during training,
+    \item compressed expressive models in which the mask is applied to the three-qubit ansatz.
+\end{itemize}
+For the two-qubit architecture, these runs typically converge to a sparsity level $s = 2/3$ (two active interaction terms out of three possible) and a post-transpile cost $N_{2q} = 4$. Additional ablation runs instantiate random masks with the same sparsity $s = 2/3$ at $\lambda = 0.1$ and $\lambda = 0.3$ in order to compare structured and unstructured connectivity at a fixed two-qubit gate budget.
+
+Finally, a dedicated $\lambda$-sweep series varies the regularization weight over
+\[
+\lambda \in \{0,\;10^{-3},\;10^{-2},\;0.05,\;0.10,\;0.20\},
+\]
+starting from the diagnostic baseline and progressively increasing $\lambda$ to encourage more aggressive pruning. For each value of $\lambda$, the same two-qubit, depth-three ansatz is trained with the pruning mechanism enabled, and the final test accuracy, cross-entropy loss, post-transpile two-qubit gate count $N_{2q}$, and mask sparsity $s$ are recorded. The primary quantities of interest across all trials are the final classification accuracy on the test set, the cross-entropy loss, the post-transpile two-qubit cost $N_{2q}$, the effective mask sparsity $s$, and the full hardware-aware objective $L = L_{\mathrm{CE}} + \lambda N_{2q}$. These experiments provide the raw data for the Pareto plots, ablation studies, and learning-curve visualizations in Section~\ref{sec:results} and Appendix~\ref{appendix:experimental-trials}.
+
+Overall, the experimental grid was organized to test a simple sequence of questions: first, whether the default uncompressed ansatz can reliably learn the Pothos--Chater boundary; second, how much two-qubit cost can be removed before accuracy degrades; and third, whether learned sparse masks outperform random masks at the same two-qubit budget. All code, YAML configurations, and logged results needed to reproduce these trials are available in the public repository \footnote{\url{https://github.com/zoraizmohammad/qb-learner-compression}}, and the main practical challenges—tuning learning rates for larger values of $\lambda$ and confirming that Qiskit’s transpiler reported stable two-qubit counts across runs—were resolved empirically before collecting the final set of results.
+
+\section{Results and Data Analysis}
+\label{sec:results}
+
+In this section, we evaluate the empirical behavior of the quantum Bayesian learner on
+the Pothos--Chater categorization task under a range of circuit architectures,
+regularization strengths, and mask structures. We focus on three main
+quantities: (i) test accuracy on the held-out dataset, (ii) binary
+cross-entropy (CE) loss, and (iii) the number of two-qubit gates $N_{2q}$ in
+the transpiled circuit, which serves as a proxy for hardware cost on a NISQ
+device. Together, these metrics allow us to trace an empirical
+accuracy--complexity trade-off and to assess how different compression
+strategies affect the learner.
+
+\subsection{Summary of Baseline and Compressed Models}
+
+Table~\ref{tab:main-summary} summarizes the key configurations considered in
+the main analysis. Each row corresponds to a YAML configuration described in
+Section~III and the Appendix, and reports the number of qubits $n$, ansatz
+depth $D$, regularization weight $\lambda$, final mask sparsity $s$ (fraction
+of active entanglers), test accuracy, CE loss, and post-transpile two-qubit
+gate count $N_{2q}$.
+
+\begin{table}[H]
+\centering
+\caption{Summary of baseline and compressed quantum Bayesian learners on the Pothos--Chater task. $n$ is the number of qubits, $D$ is the circuit depth, $\lambda$ is the regularization weight on two-qubit cost, $s$ is the final mask sparsity (fraction of active entanglers), and $N_{2q}$ is the post-transpile two-qubit gate count.}
+\label{tab:main-summary}
+\begin{tabular}{lccccccc}
+\toprule
+                      Model & $n$ & $D$ & $\lambda$ &   $s$ & Acc. &   CE & $N_{2q}$ \\
+\midrule
+        Diagnostic baseline &   2 &   3 &     0.000 &    -- & 0.80 & 0.63 &        6 \\
+         Baseline (default) &   2 &   3 &     0.010 &    -- & 0.75 & 0.66 &        6 \\
+             Baseline, Adam &   2 &   3 &     0.010 &    -- & 0.76 & 0.65 &        6 \\
+      Baseline, channel 0.8 &   2 &   3 &     0.010 &    -- & 0.71 & 0.72 &        6 \\
+          Baseline, depth 4 &   2 &   4 &     0.010 &    -- & 0.77 & 0.64 &        6 \\
+       Baseline, expressive &   3 &   4 &     0.100 &    -- & 0.78 & 0.64 &        6 \\
+Baseline, $\lambda=10^{-3}$ &   2 &   3 &     0.001 &    -- & 0.74 & 0.67 &        6 \\
+       Compressed (default) &   2 &   3 &     0.100 &  0.67 & 0.74 & 0.67 &        4 \\
+          Compressed, fixed &   2 &   3 &     0.100 &  0.67 & 0.72 & 0.70 &        4 \\
+         Compressed, gentle &   2 &   3 &     0.100 &  0.67 & 0.75 & 0.66 &        4 \\
+             Compressed, v2 &   2 &   3 &     0.100 &  0.67 & 0.76 & 0.65 &        4 \\
+     Compressed, expressive &   3 &   4 &     0.100 &  0.67 & 0.76 & 0.65 &        4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Across the baselines, test accuracies on the Pothos--Chater dataset lie in the
+range $0.71$--$0.80$, clearly above chance performance ($0.5$) for a balanced
+binary task. The ``diagnostic'' configuration, which uses a two-qubit,
+depth-$3$ ansatz with no regularization ($\lambda=0$) and a relatively weak
+channel, achieves the highest accuracy (0.80) and lowest CE loss (0.63). This
+run serves as an idealized reference for the rest of the study. Other baselines
+that vary the optimizer, channel strength, and depth show modest variations in
+performance while all retaining the same post-transpile two-qubit cost
+$N_{2q} = 6$.
+
+The compressed configurations activate only two of the three possible
+entangling blocks in the two-qubit ansatz, yielding $N_{2q} = 4$ after
+transpilation. Despite this one-third reduction in two-qubit gates, several
+compressed models achieve accuracies between $0.74$ and $0.76$, comparable to
+or slightly exceeding the default baseline. The final mask sparsity for these
+runs is $s \approx 0.67$, indicating that two out of three entanglers remain
+active. The ``compressed, fixed'' configuration, which prunes more
+aggressively, attains a slightly lower accuracy (0.72) and higher CE loss,
+while the ``compressed, gentle'' and ``compressed, v2'' runs preserve or
+improve upon the baseline accuracy.
+
+\subsection{Accuracy--Complexity Pareto Frontier}
+
+To visualize the overall trade-off between learning performance and hardware
+cost, Fig.~\ref{fig:pareto} plots test accuracy against the post-transpile
+two-qubit gate count $N_{2q}$ for all baseline and compressed configurations in
+Table~\ref{tab:main-summary}. Baseline models are shown as circles and
+compressed models as triangles, with short textual labels indicating the
+corresponding YAML configuration.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{figure_4_1_pareto_labeled.png}
+\caption{Empirical accuracy--complexity trade-off for the quantum Bayesian learner. Each point shows the final test accuracy versus the number of post-transpilation two-qubit gates for a baseline (circles) or compressed (triangles) configuration. Compressed models (4 CNOTs) achieve nearly the same accuracy as uncompressed baselines (6 CNOTs), demonstrating that a substantial reduction in entangling cost is compatible with robust categorization performance on the Pothos--Chater task.}
+\label{fig:pareto}
+\end{figure}
+
+The figure reveals two visible clusters. The first cluster, at $N_{2q}=6$,
+contains the diagnostic run, the default baseline, and its variants (Adam
+optimizer, deeper depth-$4$ ansatz, stronger channel, and expressive three-qubit
+ansatz). Within this cluster, accuracies range from $0.71$ (stronger channel)
+to $0.80$ (diagnostic), with most baselines concentrated around $0.75$--$0.78$.
+The second cluster, at $N_{2q}=4$, contains all compressed configurations, with
+accuracies between $0.72$ and $0.76$. The most conservative pruning schedule
+(compressed, v2) yields the highest accuracy among compressed models (0.76),
+slightly surpassing the default two-qubit baseline.
+
+Taken together, the points in Fig.~\ref{fig:pareto} trace an empirical Pareto
+frontier: starting from the idealized diagnostic baseline, one can move
+horizontally left to compressed configurations that reduce two-qubit cost by
+approximately $33\%$ while incurring only a small change in accuracy (and in
+some cases a small improvement). This provides a first quantitative indication
+that the hardware-aware compression objective can simplify the circuit without
+destroying the learner's capacity to categorize Pothos--Chater stimuli.
+
+\subsection{Effect of Regularization Strength}
+
+To more systematically probe how the regularization parameter $\lambda$
+mediates the trade-off between CE loss and two-qubit cost, we performed a
+sweep over $\lambda \in \{0, 10^{-3}, 10^{-2}, 5\times 10^{-2}, 10^{-1},
+2\times 10^{-1}\}$. Figure~\ref{fig:lambda-sweep} summarizes these runs using a
+four-panel plot.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{figure_4_2_lambda_sweep.png}
+\caption{Regularization sweep for the hardware-aware loss. (Top left) Final cross-entropy loss and (top right) total loss $L = L_{\mathrm{CE}} + \lambda N_{2q}$ as a function of regularization strength $\lambda$ (log-scale on the $x$-axis). (Bottom left) Post-transpile two-qubit gate count decreases monotonically with $\lambda$, while (bottom right) the resulting Pareto front in the $(N_{2q}, L_{\mathrm{CE}})$ plane illustrates an empirical trade-off between classification quality and entangling cost. Moderate values ($\lambda \approx 0.05$) lie near the knee of the curve, providing large gate savings for a small increase in cross-entropy.}
+\label{fig:lambda-sweep}
+\end{figure}
+
+In the top-left panel, the final CE loss $L_{\mathrm{CE}}$ is plotted against
+$\lambda$ (log-scale). For small penalties ($\lambda = 0$ and $10^{-3}$), the
+learner attains a CE loss of approximately $0.63$, matching the diagnostic
+baseline. As $\lambda$ increases, CE loss gradually rises to about $0.74$ at
+$\lambda = 0.2$. This reflects the increasingly strong pressure to prioritize
+gate cost over pure likelihood fit.
+
+The top-right panel plots the full objective
+$L = L_{\mathrm{CE}} + \lambda N_{2q}$ as a function of $\lambda$. Because the
+two-qubit cost enters additively, the total loss is smallest at the left end of
+the sweep and grows as $\lambda$ increases, with a noticeable change in slope
+once the two-qubit count begins to drop. This panel highlights the net cost the
+optimizer sees when trading off accuracy against hardware usage.
+
+The bottom-left panel shows the post-transpile two-qubit gate count $N_{2q}$ as
+a function of $\lambda$. For $\lambda \leq 10^{-3}$, the learner does not
+prune any entanglers and the effective cost remains at $N_{2q}=6$. At
+$\lambda = 10^{-2}$, the model typically removes one entangling block,
+reducing the cost to $N_{2q}=5$. For $\lambda = 0.05$ and $0.10$, the
+optimization settles on configurations with $N_{2q}=4$, consistent with the
+compressed runs in Table~\ref{tab:main-summary}. The strongest regularization
+($\lambda = 0.2$) yields a further reduction to $N_{2q}=3$, corresponding to a
+sparser mask.
+
+Finally, the bottom-right panel plots the CE loss against $N_{2q}$ for each
+$\lambda$, with color indicating the value of $\lambda$. The points form a
+clear Pareto curve: moving from $(N_{2q}=6,L_{\mathrm{CE}}\approx 0.63)$ at
+$\lambda=0$ to $(N_{2q}=4,L_{\mathrm{CE}}\approx 0.66)$ at
+$\lambda\approx 0.05$ and $(N_{2q}=3,L_{\mathrm{CE}}\approx 0.74)$ at
+$\lambda=0.2$. The intermediate penalties ($\lambda=0.01$ and $0.05$)
+therefore lie near the knee of the curve, providing substantial gate savings
+for a modest increase in CE loss. These experiments confirm that the
+hardware-aware loss behaves as intended: stronger penalties systematically
+drive the learner toward simpler, lower-cost circuits.
+
+\subsection{Mask Structure Ablation: Learned vs Random Connectivity}
+
+The previous analyses focus on total gate count, but the loss also depends on
+\emph{which} entanglers are active. To isolate the effect of mask structure, we
+conducted a small ablation study comparing three conditions at a fixed cost
+budget: (i) the full baseline circuit with all entanglers active, (ii) a
+compressed circuit with a learned sparse mask, and (iii) a circuit with a
+random mask that retains the same number of entanglers but ignores task
+structure. Figure~\ref{fig:mask-ablation} reports test accuracy for these
+conditions at two regularization strengths, $\lambda = 0.1$ and
+$\lambda = 0.3$.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{figure_4_3_mask_ablation_labeled_x.png}
+\caption{Mask structure ablation. Bars show test accuracy for the full baseline circuit (6 CNOTs), a learned sparse mask (4 CNOTs), and a random mask with the same number of entanglers, at two regularization strengths $\lambda$. Error bars on the random-mask bars denote standard deviation across seeds. Learned masks preserve baseline-level performance while reducing two-qubit gates by roughly one third, whereas random configurations suffer substantial accuracy degradation, highlighting the importance of task-aligned connectivity.}
+\label{fig:mask-ablation}
+\end{figure}
+
+At $\lambda = 0.1$, the baseline circuit achieves an accuracy of
+approximately $0.78$ with $N_{2q}=6$. The learned mask configuration, which
+retains only two entanglers ($N_{2q}=4$), attains a test accuracy of about
+$0.76$, essentially matching the baseline despite the reduced cost. In
+contrast, random masks with the same number of entanglers yield accuracies in
+the range $0.68$--$0.70$ across multiple seeds, substantially lower than both
+the baseline and learned mask.
+
+At the stronger penalty $\lambda = 0.3$, the baseline circuit again remains at
+$N_{2q}=6$ and maintains an accuracy near $0.78$. The learned mask still
+performs competitively at about $0.73$, whereas random masks fall further, with
+mean accuracies around $0.63$ and noticeably larger variance across seeds. In
+both penalty regimes, the fully pruned configuration with no entangling gates
+(analyzed in the Appendix) performs only slightly above chance, indicating that
+some entanglement is necessary for robust categorization. Overall,
+Fig.~\ref{fig:mask-ablation} shows that the detailed connectivity pattern of
+entanglers---not just their count---strongly influences the learner's
+behavior.
+
+\subsection{Training Dynamics and Compression Behavior}
+
+The previous sections examined final metrics. To understand how these
+configurations are reached during optimization, we now look at the training
+trajectories of a representative baseline and two compressed learners.  
+Figure~\ref{fig:training-dynamics} plots accuracy and two-qubit gate count as a
+function of training iteration for the default baseline, a gently pruned
+compressed model, and a more aggressively pruned compressed model.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{figure_4_4_training_dynamics.png}
+\caption{Training dynamics for baseline and compressed learners. (Top) Accuracy as a function of optimization iteration for the uncompressed baseline (6 CNOTs) and two compressed models (4 CNOTs) with gentle and fixed pruning schedules. The gently pruned model closely tracks the baseline and converges to a similar accuracy, while the fixed schedule converges slightly lower. (Bottom) Post-transpile two-qubit gate count $N_{2q}$ during training. The baseline remains at 6 CNOTs, whereas the compressed models exhibit a clear drop from 6 to 4 gates when the mask begins disabling entanglers, illustrating how the hardware-aware loss gradually simplifies the circuit.}
+\label{fig:training-dynamics}
+\end{figure}
+
+In the top panel, all three models start near chance accuracy and show steady
+improvement over the course of training. The baseline and the gently pruned
+compressed model follow almost identical trajectories, converging to final
+accuracies around $0.75$. The more aggressively pruned model tracks the same
+trend initially but levels off at a slightly lower accuracy of about $0.72$.
+
+The bottom panel plots the post-transpile two-qubit gate count $N_{2q}$ for the
+same runs. The baseline curve is constant at $N_{2q}=6$ throughout training,
+reflecting its fixed entangling pattern. In contrast, both compressed models
+begin with $N_{2q}=6$ and then undergo a discrete drop to $N_{2q}=4$ once the
+pruning heuristic starts disabling entanglers. For the gentle schedule, this
+transition occurs later in training, after the CE loss has largely stabilized,
+whereas the fixed schedule prunes earlier. These trajectories show that the
+hardware-aware loss and pruning mechanism do not simply impose a static sparse
+architecture; rather, they allow the learner to explore a richer
+fully-entangled circuit early in optimization and progressively compress it to
+a lower-cost structure as training proceeds.
+
+Taken together, Table~\ref{tab:main-summary} and
+Figures~\ref{fig:pareto}--\ref{fig:training-dynamics} provide a quantitative
+picture of how the quantum Bayesian learner behaves under hardware-aware
+compression.
+
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Accuracy--Complexity Trade-off}
+
+The central quantitative finding of this project is that a small amount of
+structured compression can substantially reduce the transpiled entangling cost
+without destroying performance on the Pothos--Chater categorization task.  
+In Table~I and Fig.~\ref{fig:pareto}, all baseline configurations share the
+same post-transpile two-qubit gate count $N_{2q}=6$, but vary in optimizer,
+channel strength, and depth. Their accuracies span the range
+$0.71$--$0.80$, with the diagnostic baseline achieving the best performance on
+the task (Acc $\approx 0.80$, CE $\approx 0.63$). These baselines establish a
+reference level of ``uncompressed'' cognitive performance for the quantum
+Bayesian learner under a fully entangled, hardware-efficient ansatz.
+
+The compressed configurations, by contrast, converge to circuits with
+$N_{2q}=4$, corresponding to two active entanglers in the mask. Despite this
+one-third reduction in two-qubit gates, several of these models match or
+slightly exceed the default baseline accuracy, with test accuracies in the
+range $0.74$--$0.76$ and CE losses close to those of the uncompressed runs.
+The Pareto plots in Figs.~\ref{fig:pareto} and~\ref{fig:lambda-sweep} show that
+these compressed models lie near the knee of the empirical
+accuracy--complexity frontier: moving from $N_{2q}=6$ to $N_{2q}=4$ yields a
+large decrease in gate cost with only a small increase in CE loss.
+
+The regularization sweep in Table~\ref{tab:lambda-sweep} and
+Fig.~\ref{fig:lambda-sweep} clarifies how this trade-off is mediated by the
+penalty parameter $\lambda$ in the hardware-aware objective. For very small
+penalties ($\lambda=0$ and $10^{-3}$), no gates are removed, the mask remains
+dense, and the learner converges to high accuracy. As $\lambda$ increases, the
+mask becomes sparser and the transpiled two-qubit count decreases in discrete
+steps from 6 to 5, 4, and eventually 3. Accuracy and CE loss respond smoothly:
+moderate penalties such as $\lambda=0.05$ yield circuits with $N_{2q}=4$ and
+Acc $\approx 0.75$, whereas the strongest penalty ($\lambda=0.2$) reduces the
+two-qubit cost further to $N_{2q}=3$ but at a more noticeable drop in accuracy
+(Acc $\approx 0.68$). The learning curves in Fig.~\ref{fig:A1-lambda-learning}
+show that these differences in final metrics arise from consistent
+convergence behavior across $\lambda$, rather than from unstable training.
+
+Taken together, these results indicate that, at least for this small
+categorization task and ansatz family, it is possible to operate the quantum
+Bayesian learner in a regime where hardware-aware compression and task
+performance are jointly favorable. The learner is not forced to choose
+between a fully entangled but fragile circuit and an excessively pruned
+circuit that cannot represent the task; instead, there is a broad intermediate
+regime where accuracy remains robust while the two-qubit cost is significantly
+reduced.
+
+\subsection{Pruning and Cognitive Capacity}
+
+A key motivation of this project was to interpret the circuit’s entangling
+structure as a proxy for the ``cognitive capacity'' of the quantum Bayesian
+learner. In this analogy, the number and pattern of two-qubit gates play a
+role somewhat analogous to the richness of connections in a neural or symbolic
+cognitive architecture: more entanglers correspond to a larger space of
+representable belief states and update dynamics, but also to a higher noise
+budget on NISQ hardware.
+
+From this perspective, Figs.~\ref{fig:mask-ablation}
+and~\ref{fig:A2-pruning-schedules} and Table~\ref{tab:mask-ablation} provide a
+fine-grained picture of how pruning affects cognitive capacity. When the mask
+starts from a fully entangled configuration and is allowed to prune gradually
+under the hardware-aware loss, the learner can remove roughly one third of the
+entanglers (reducing $N_{2q}$ from 6 to 4) while preserving nearly all of its
+ability to categorize the Pothos--Chater stimuli. The gently pruned and v2
+compressed models in Table~I and Table~\ref{tab:appendix-summary} achieve
+accuracies within a few percentage points of the baseline despite the reduced
+connectivity. The training dynamics in Figs.~\ref{fig:training-dynamics} and
+\ref{fig:A2-pruning-schedules} show that, in these cases, pruning tends to
+occur after the CE loss has largely stabilized, suggesting that the learner
+first discovers a good update rule in a fully entangled space and then
+consolidates it into a lower-capacity architecture.
+
+The mask ablation study in Fig.~\ref{fig:mask-ablation} and
+Table~\ref{tab:mask-ablation} highlights, however, that not all forms of
+pruning are benign. When entanglers are removed using a learned mask, the
+resulting sparse circuit retains baseline-level performance at both
+$\lambda=0.1$ and $\lambda=0.3$, with accuracies only $2$--$5$ percentage
+points below the uncompressed baseline. In contrast, random masks with the
+same number of entanglers and the same overall two-qubit budget yield
+substantially worse accuracies (drops of $9$--$15$ percentage points) and show
+greater variability across seeds. This indicates that the detailed connectivity
+pattern—\emph{which} entanglers remain active—matters at least as much as the
+raw count $N_{2q}$. In terms of the cognitive analogy, this means that
+capacity reductions that respect the structure of the task (e.g., by
+preserving key interactions between features that support the category
+boundary) can be compatible with robust belief updating, whereas unstructured
+pruning can remove the very channels that support meaningful generalization.
+
+Figure~\ref{fig:A3-mask-sparsity} further supports this picture. The gently
+pruned learner initially deploys all three entanglers (mask sparsity $s=1$),
+exploring a rich space of belief updates. Only after some training does the
+mask settle on a configuration with two entanglers ($s\approx 2/3$), which
+then remains stable. In cognitive terms, this is reminiscent of early phases
+of learning where a model explores a high-capacity hypothesis space and later
+converges to a more economical representation once task-relevant structure has
+been identified.
+
+At the other extreme, experiments with fully pruned ansätze (no entanglers,
+not shown in the main tables) demonstrate that aggressive pruning eventually
+undermines cognitive capacity: the learner’s performance drops toward chance,
+indicating that some entanglement is genuinely necessary to support the
+Bayesian-style updates required for the Pothos--Chater task. Thus, pruning
+harms learning when it either removes too many entanglers or removes them in a
+pattern that breaks the alignment between circuit connectivity and task
+structure.
+
+\subsection{Limitations}
+
+Several limitations of the present study should be emphasized when interpreting
+these findings.
+
+First, the learning problem itself is intentionally small and stylized. The
+Pothos--Chater dataset used here consists of low-dimensional feature vectors
+with a simple geometric category boundary. This makes it ideal for studying
+belief-updating dynamics but does not test the limits of expressivity or
+trainability in larger-scale quantum models. Likewise, the belief space in the
+current implementation is restricted to one- or two-qubit density matrices,
+which limits the complexity of the internal hypothesis space that the learner
+can represent.
+
+Second, the evidence channels used to implement Bayesian updates are relatively
+simple, with parameters that depend only on the stimulus features through
+elementary functional forms. While this choice keeps the model transparent and
+traceable to standard quantum channel theory, it does not exhaust the
+possibilities offered by more general positive-operator-valued measures
+(POVMs), non-unital channels, or context-dependent update rules that may be
+more appropriate for rich cognitive tasks.
+
+Third, all experiments are performed using Qiskit’s FakeManila backend and
+statevector simulations, rather than on real quantum hardware. The transpiled
+two-qubit gate count is therefore used as a proxy for hardware cost, and
+realistic noise is only approximated via the backend model. In practice, the
+relationship between gate count and performance on a physical device may
+depend on calibration quality, readout noise, crosstalk, and other
+device-specific factors that are not fully captured in the present setup.
+
+Fourth, the mask optimization itself is implemented via a simple greedy pruning
+heuristic. While effective for this small ansatz, it does not explore the full
+space of possible architectures, nor does it leverage gradient information or
+more sophisticated search schemes. As a result, the learned masks should be
+viewed as one possible family of compressed circuits rather than as
+provably optimal architectures for the task.
+
+Finally, the study does not compare the quantum Bayesian learner directly to
+classical baselines (such as logistic regression or classical Bayesian
+classifiers) on the same task, nor does it investigate sample complexity or
+scaling properties with respect to data size and number of qubits. The
+conclusions are therefore primarily about \emph{relative} trade-offs within
+this quantum model class under NISQ-style constraints, rather than about
+absolute advantages over classical approaches.
+
+\subsection{Future Directions}
+
+Despite these limitations, the present work opens several directions for
+further research at the intersection of quantum cognition, Bayesian learning,
+and hardware-efficient variational circuits.
+
+On the cognitive side, one natural extension is to move beyond two-qubit
+belief states to multi-qubit belief registers that can encode richer
+hypothesis spaces, such as hierarchical or compositional category structures.
+This would allow the quantum Bayesian learner to model more complex forms of
+generalization and to test whether the observed robustness of compressed
+circuits persists in higher-dimensional belief spaces. Along the same lines,
+future work could explore richer families of evidence channels, including
+POVM-based updates, context-dependent channels, or channels that implement
+non-commutative sequences of observations more akin to phenomena studied in
+quantum cognition.
+
+From a hardware perspective, it would be valuable to replicate the present
+experiments on real quantum devices and to compare the behavior of the
+hardware-aware loss against empirical error rates, rather than just gate
+counts. This would test whether the observed accuracy--complexity frontier is
+robust under calibration drift, readout noise, and other device-level
+imperfections. The compression framework could also be extended to include
+other hardware-relevant metrics, such as total circuit depth, coherence-time
+constraints, or native gate fidelities, by incorporating them into the loss in
+the same spirit as the two-qubit penalty.
+
+On the algorithmic side, more advanced circuit-architecture search methods
+could be integrated with the mask mechanism. For example, differentiable
+relaxations of binary masks, stochastic search over entangling patterns, or
+reinforcement-learning approaches to circuit design could be used to explore
+a wider and more flexible space of hardware-aware ansätze. This might reveal
+compressed architectures with even better trade-offs on more challenging
+datasets, or identify task-specific connectivity motifs that generalize across
+related learning problems.
+
+Finally, the cognitive capacity analogy itself could be developed more
+systematically. One promising direction is to treat the density-matrix belief
+states and their channel-induced dynamics as a quantitative model of cognitive
+resource allocation under physical constraints. The present results suggest
+that, at least for simple concept-learning tasks, a modest reduction in
+entangling capacity does not greatly impair performance, whereas random or
+overly aggressive pruning does. Extending this analysis to more complex
+stimuli, multi-step inference problems, and human behavioral data could help
+clarify whether quantum-inspired models of cognition can remain meaningful
+under the severe hardware limitations of near-term devices.
+
+In summary, the experiments in this project show that a small quantum Bayesian
+learner can maintain cognitively meaningful behavior under realistic
+NISQ-style compression, provided that the entangling structure is pruned in a
+task-aware manner. This suggests that hardware-aware quantum models of
+cognition need not abandon rich belief dynamics in order to be implementable
+on near-term hardware, and motivates further work on scalable, structure-aware
+compression schemes for quantum learning systems.
+
+\section{Related Work and Completeness}
+
+The present study draws together several threads spanning variational quantum algorithms, Hilbert-space models of cognition, and compiler-level techniques for reducing multi-qubit gate counts. Variational quantum circuits have a long history in the quantum algorithms community, particularly through the development of the Variational Quantum Eigensolver (VQE) and related hybrid optimization frameworks \cite{b4,b6,b7}. Hardware-efficient ansätze, introduced by Kandala et al. \cite{b4} and later analyzed for their expressiveness and practical constraints \cite{b5}, establish a baseline for circuit structures that trade analytic structure for reduced depth on near-term devices. Additional research on architecture search algorithms \cite{b16,b17} highlights the sensitivity of variational performance to entangling patterns, ansatz density, and parameter allocation. These insights motivate the use of a small, hardware-efficient Heisenberg-style ansatz and the structured masking and pruning strategies explored in the present work.
+
+From the standpoint of cognitive modeling, this project is influenced by Bayesian accounts of human inductive reasoning and category learning \cite{b1,b2,b11}, as well as more recent efforts to formalize cognition within the mathematical framework of Hilbert spaces \cite{b3}. Quantum-inspired models of cognition demonstrate that interference, superposition, and context-dependent updating can reproduce behavioral effects that are difficult to capture in classical probabilistic theories, and this motivates our investigation of whether quantum channels can support task-aware updates in a categorization setting. Earlier work applying quantum channels to inference problems \cite{b8,b9} provides methodological grounding for the design of the evidence-update mechanisms used here, in which belief states are represented by density matrices and updated via stimulus-dependent channels on a low-dimensional feature space.
+
+Finally, this work relates to compiler-level strategies for reducing two-qubit gate counts, which are a primary bottleneck for NISQ-era devices. Techniques such as error-divisible two-qubit gate constructions \cite{b10}, as well as channel-based analyses of Kraus operators and noise propagation \cite{b12,b13}, motivate the need for circuit-level compression methods that go beyond naive gate pruning. While compiler frameworks such as Qiskit's transpiler and ZX-calculus–based optimizers can reduce gate counts post hoc, they are generally task-agnostic. The present work instead incorporates a penalty on two-qubit gate usage directly into the learning objective and couples this penalty to a learnable mask over entanglers. In the experiments, this yields an empirical accuracy–complexity Pareto frontier and exposes a clear distinction between structured (learned) sparse masks and randomly chosen masks at the same two-qubit budget, distinguishing our approach from standard prune-and-transpile workflows.
+
+Overall, the completeness of this study lies in its synthesis of these three bodies of work: the variational algorithm literature providing circuit structure and optimization insights, the quantum cognition literature motivating the Bayesian update mechanisms, and the quantum compilation literature grounding the hardware-motivated compression penalty. By combining these foundations and instantiating them in a concrete, Pothos-inspired categorization task, the proposed framework offers a task-driven perspective on circuit compression that has not been examined in detail in the quantum cognition or variational-learning communities.
+
+
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+This project set out to connect three ideas that are usually treated
+separately: Bayesian models of cognition, Hilbert-space formalisms from quantum
+cognition, and the very practical constraints imposed by NISQ-era quantum
+hardware. The central question was whether a small quantum Bayesian learner,
+implemented as a hardware-efficient variational circuit and trained on a
+psychologically motivated categorization task, could retain meaningful
+``cognitive'' performance while operating under a realistic penalty on
+two-qubit gate usage.
+
+The experiments provide an affirmative but nuanced answer. Using the
+Pothos--Chater style dataset as a controlled benchmark, the uncompressed
+baseline circuits established that the proposed quantum Bayesian learner can
+indeed learn a sensible category boundary, achieving accuracies around
+$0.75$--$0.80$ with fully entangled ansätze and six post-transpile two-qubit
+gates. Introducing a hardware-aware loss that penalizes the transpiled
+two-qubit count shifted the optimization problem from pure predictive accuracy
+to an explicit accuracy--complexity trade-off. Across a sweep of penalty
+strengths, the learner consistently discovered compressed circuits with only
+four two-qubit gates that preserved almost all of the baseline performance.
+The resulting Pareto frontier demonstrates a broad regime in which
+classification accuracy remains high while entangling cost is significantly
+reduced, rather than a sharp cliff where any pruning immediately destroys
+behavior.
+
+At the same time, the mask-ablation experiments show that not all
+reductions in entangling structure are equivalent. When the connectivity
+pattern is learned jointly with the circuit parameters, the compressed models
+maintain test accuracies only a few percentage points below the full baseline.
+When the same two-qubit budget is allocated according to random masks,
+performance degrades much more severely, and variability across seeds
+increases. From the perspective of the cognitive analogy adopted here,
+structured pruning preserves the learner’s effective ``cognitive capacity''
+by retaining the interactions that are most aligned with the task structure,
+whereas unstructured pruning removes entanglers in ways that break the
+useful channels for belief updating.
+
+These findings are necessarily preliminary: they are obtained on a small,
+low-dimensional task using simple evidence channels and simulated hardware
+backends. Nevertheless, they suggest a concrete path forward for
+hardware-aware quantum models of cognition. The results show that it is
+possible to embed Bayesian-style belief dynamics in a variational circuit
+whose entangling structure is explicitly adapted to NISQ constraints, without
+collapsing the model to a trivial or purely classical regime. More broadly,
+the work illustrates how ideas from quantum cognition can be operationalized
+in the language of variational quantum algorithms, and how concepts such as
+cognitive capacity can be translated into quantitative measures such as
+entangler patterns, gate counts, and sparsity trajectories.
+
+Looking ahead, the framework developed here can be extended in several
+directions: to multi-qubit belief states that support richer hypothesis
+spaces, to more expressive quantum channels and POVM-based updates, to
+real-device experiments that tie the two-qubit penalty directly to empirical
+error rates, and to more sophisticated architecture-search methods for
+discovering compressed ansätze. Taken together, these directions point toward
+a broader program in which quantum-inspired models of cognition are not only
+theoretically motivated but also designed from the outset to respect the
+physical limitations and opportunities of near-term quantum hardware. This
+paper offers an initial case study in that program, demonstrating that
+carefully structured compression can reconcile cognitively meaningful quantum
+Bayesian learning with the realities of NISQ-era devices.
+
+
+\appendix
+% \setcounter{table}{0}
+% \renewcommand{\thetable}{A\arabic{table}}
+% \setcounter{figure}{0}
+% \renewcommand{\thefigure}{A\arabic{figure}}
+\subsection*{\textbf{Full Experimental Trials}}
+\label{appendix:experimental-trials}
+
+\subsection{Experiment Infrastructure}
+
+All experiment configurations, scripts, and notebooks are available in the project repository\footnote{\url{https://github.com/zoraizmohammad/qb-learner-compression}}. The \texttt{experiments/} directory contains YAML configuration files that specify optimizer settings, mask schedules and sparsity levels, circuit depth, qubit count, and regularization parameters. A unified driver script, \texttt{experiment\_run\_all.py}, reads each YAML file, constructs the quantum Bayesian learner, and executes a fixed-length training loop (typically $100$ gradient steps). During each run, the script logs per-iteration quantities (losses, accuracies, mask sparsities, and two-qubit counts) to CSV files and aggregates the final summary statistics across all experiments into a single file \texttt{all\_experiments\_summary.csv}. 
+
+Additional analysis scripts compute derived summaries for specific studies:
+\begin{itemize}
+    \item \texttt{lambda\_sweep\_summary.csv} collects the final metrics for runs that vary the regularization strength $\lambda$.
+    \item \texttt{mask\_ablation\_results.csv} records the outcomes of the learned-versus-random mask ablation experiments.
+    \item Per-experiment logs such as \texttt{baseline\_log\_pothos\_large.csv} and \texttt{compressed\_log\_pothos\_large\_gentle.csv} store full training traces (accuracy, cross-entropy, two-qubit count, active entanglers, and mask sparsity as functions of iteration).
+\end{itemize}
+
+Trials are performed using Qiskit and the \texttt{FakeManila} backend as a realistic approximation of a small superconducting device. For each candidate circuit $U(\theta,m)$, the experiment code invokes Qiskit’s transpiler on \texttt{FakeManila} and counts the number of resulting two-qubit operations (including any SWAPs inserted to satisfy the coupling map). This post-transpile two-qubit gate count $N_{2q}$ is used both as a diagnostic and as the hardware-aware penalty term in the loss. All learning dynamics are simulated using noiseless backends, so that the effect of the compression objective on circuit structure and predictive performance can be measured without additional stochastic variability from noise.
+
+\subsection{Datasets}
+
+The learner is trained on a Pothos--Chater style stimulus set implemented in \texttt{data.py}. The large variant, \texttt{get\_pothos\_chater\_large()}, generates two Gaussian-like clusters in a two-dimensional feature space,
+\[
+X = \{x_k\}_{k=1}^{40} \subset [0,1]^2,
+\qquad
+y_k \in \{0,1\},
+\]
+with $20$ points per category. Category~A stimuli are sampled around a prototype at $(0.23,0.27)$ and category~B around $(0.77,0.73)$, each with standard deviation $0.11$ along both dimensions. The resulting points are stacked and accompanied by binary labels $y$, with $y=0$ for category~A and $y=1$ for category~B. Features are normalized to lie in $[0,1]$ and are encoded into the circuit through single-qubit rotation gates; the same features also parameterize the evidence channel that implements the Bayesian-style belief update.
+
+In all experiments, the dataset is randomly partitioned into training and test splits using a fixed random seed to ensure reproducibility. Because the two categories are exactly balanced (20 positives and 20 negatives), chance performance corresponds to $0.5$ accuracy. The empirical accuracies reported in Tables~\ref{tab:main-summary} and~\ref{tab:appendix-summary} therefore directly reflect the learner’s ability to recover the simple geometric decision boundary implicit in the Pothos--Chater construction.
+
+\subsection{Circuit Depths and Qubit Counts}
+
+The majority of experiments in the main text use a two-qubit ansatz of modest depth:
+\begin{itemize}
+    \item Number of qubits: $n = 2$,
+    \item Depth: $D = 3$ layers of single-qubit rotations followed by Heisenberg-type entanglers.
+\end{itemize}
+This configuration forms the ``default'' quantum Bayesian learner used in the diagnostic and baseline runs. The choice $n=2$, $D=3$ mirrors the small-scale cognitive setting and keeps the parameter space manageable, while still allowing nontrivial entanglement and mask structure.
+
+Several baseline configurations explore variations around this default, including deeper circuits and slightly larger registers. For example, \texttt{baseline\_pothos\_large\_depth4.yaml} employs a depth-$4$ ansatz with otherwise identical settings, and \texttt{baseline\_pothos\_large\_expressive.yaml} introduces an additional qubit ($n=3$) and a denser entangling pattern. Corresponding compressed configurations (e.g., \texttt{compressed\_pothos\_large\_expressive.yaml}) apply masking to these more expressive ansätze. These variations are reported in Table~\ref{tab:main-summary} and Table~\ref{tab:appendix-summary} and allow us to confirm that the qualitative compression behavior is not tied to a single depth or qubit count.
+
+\subsection{Regularization and Penalty Parameters}
+
+Each training run optimizes a hardware-aware objective of the form
+\[
+L(\theta,m) = L_{\text{CE}}(\theta,m) + \lambda \cdot N_{2q}(\theta,m),
+\]
+where $L_{\text{CE}}$ is the average binary cross-entropy loss on the training data and $N_{2q}$ is the number of two-qubit gates in the transpiled circuit on the \texttt{FakeManila} coupling map. The scalar $\lambda \ge 0$ controls the trade-off between predictive accuracy and entangling cost.
+
+The YAML configurations explore a range of penalty regimes:
+\begin{itemize}
+    \item $\lambda = 0.0$ (no hardware penalty, ``ideal'' model used as a reference),
+    \item $\lambda = 10^{-3}$ (very weak penalty),
+    \item $\lambda = 10^{-2}$ (mild penalty),
+    \item $\lambda = 0.05$ and $\lambda = 0.10$ (moderate penalties used in the main compressed runs),
+    \item $\lambda = 0.20$ (strong penalty, favoring very sparse entanglement).
+\end{itemize}
+The corresponding outcomes are summarized in Table~\ref{tab:lambda-sweep}. For small $\lambda$, the optimization prioritizes CE loss and tends to keep all entanglers active ($N_{2q}=6$). As $\lambda$ increases, the training process progressively prunes entangling blocks, reducing $N_{2q}$ to $5$, then $4$, and eventually $3$, while also inducing a controlled increase in CE loss.
+
+\subsection{Baseline Configurations}
+
+The baseline experiments serve to characterize the uncompressed learner and to provide idealized reference points for the compression study. The main YAML files are:
+\begin{itemize}
+    \item \texttt{diagnostic\_baseline.yaml}, a two-qubit, depth-3 learner with $\lambda=0$ and a relatively weak evidence channel; this run attains the highest accuracy ($\approx 0.80$) and lowest CE loss and is treated as an ``ideal'' reference.
+    \item \texttt{baseline\_pothos\_large.yaml}, the default two-qubit, depth-3 model with $\lambda=10^{-2}$.
+    \item \texttt{baseline\_pothos\_large\_adam.yaml}, identical to the default baseline but trained with the Adam optimizer instead of a simple gradient-based method.
+    \item \texttt{baseline\_pothos\_large\_channel08.yaml}, which increases the strength of the evidence channel, leading to slightly noisier updates.
+    \item \texttt{baseline\_pothos\_large\_depth4.yaml}, which increases the circuit depth to $D=4$ layers.
+    \item \texttt{baseline\_pothos\_large\_expressive.yaml}, which adds a third qubit and a denser entangling pattern.
+    \item \texttt{baseline\_pothos\_large\_fixed.yaml} and \texttt{baseline\_pothos\_large\_lam001.yaml}, which adjust the regularization and training schedule while keeping the entangling structure fixed.
+\end{itemize}
+For all of these configurations, the mask is effectively dense (all entanglers are active) and the transpiled two-qubit cost remains at $N_{2q}=6$. The resulting accuracies and CE losses, reported in Tables~\ref{tab:main-summary} and~\ref{tab:appendix-summary}, fall in the range $0.71$--$0.80$ and serve as upper benchmarks when evaluating the compressed models.
+
+\subsection{Compressed Configurations}
+
+Compressed experiments activate only a subset of the available entangling blocks using a binary mask. The main YAML files for the two-qubit learner are:
+\begin{itemize}
+    \item \texttt{compressed\_pothos\_large.yaml}, a default compressed model with a learned mask.
+    \item \texttt{compressed\_pothos\_large\_fixed.yaml}, which uses a fixed pruning schedule that disables selected entanglers early in training.
+    \item \texttt{compressed\_pothos\_large\_gentle.yaml}, which prunes more conservatively, allowing the learner to train in a fully entangled regime for more iterations before sparsifying the mask.
+    \item \texttt{compressed\_pothos\_large\_v2.yaml}, which modifies the pruning heuristic while targeting the same final sparsity.
+    \item \texttt{compressed\_pothos\_large\_expressive.yaml}, applying mask-based compression to the three-qubit expressive ansatz.
+\end{itemize}
+
+In all of these runs, the mask is parameterized over three potential entangling blocks in the two-qubit ansatz, so the mask sparsity $s$ can take values in
+\[
+s \in \{1.0, 2/3, 1/3, 0\},
+\]
+corresponding to $3$, $2$, $1$, or $0$ active entanglers, respectively. The main compressed models analyzed in the paper converge to $s = 2/3$, leaving two entanglers active and yielding a post-transpile two-qubit count $N_{2q}=4$. Additional exploratory experiments (not used in the main figures) investigate more aggressive compression, including $s = 1/3$ and $s = 0$, where the circuit approaches or attains a purely single-qubit architecture.
+
+\subsection{Evaluation Metrics}
+
+Each experiment logs both per-iteration and final metrics. For iteration $t$, the logs record:
+\begin{itemize}
+    \item instantaneous binary cross-entropy loss $L_{\text{CE}}^{(t)}$,
+    \item instantaneous classification accuracy on the training set,
+    \item current two-qubit gate count $N_{2q}^{(t)}$ after transpilation,
+    \item number of active entanglers and mask sparsity $s^{(t)}$.
+\end{itemize}
+After the final iteration, the script evaluates the model on the held-out test split and stores:
+\begin{itemize}
+    \item final test accuracy (reported as \textit{Acc} in Tables~\ref{tab:main-summary} and~\ref{tab:appendix-summary}),
+    \item final test CE loss (reported as \textit{CE}),
+    \item final post-transpile two-qubit gate count $N_{2q}$,
+    \item final number of active entanglers and mask sparsity $s$,
+    \item total hardware-aware loss $L = L_{\text{CE}} + \lambda N_{2q}$.
+\end{itemize}
+These quantities form the basis of the Pareto plots in Fig.~1, the regularization sweep in Fig.~2 and Table~\ref{tab:lambda-sweep}, the mask ablation in Fig.~3 and Table~\ref{tab:mask-ablation}, and the training-dynamics visualizations in Figs.~4 and~6.
+
+\subsection{Observed Behavior}
+
+The experiments reveal several consistent patterns across configurations.
+
+\begin{itemize}
+    \item \textbf{Baseline performance.} Diagnostic and baseline models with fully active entanglers and no or weak regularization achieve test accuracies between $0.74$ and $0.80$ on the Pothos--Chater task, with CE losses in the range $0.63$--$0.67$. These values are substantially above chance ($0.5$), indicating that the small quantum Bayesian learner successfully recovers the simple geometric category structure.
+
+    \item \textbf{Compression with moderate sparsity.} Compressed models that converge to $s = 2/3$ (two active entanglers, $N_{2q}=4$) typically achieve accuracies in the range $0.72$--$0.76$, with CE losses only slightly higher than the best baselines. As summarized in Table~\ref{tab:main-summary} and Fig.~\ref{fig:pareto}, this corresponds to roughly a one-third reduction in the post-transpile two-qubit cost with minimal degradation in predictive performance.
+
+    \item \textbf{Effect of regularization strength.} The $\lambda$-sweep in Table~\ref{tab:lambda-sweep} and Fig.~\ref{fig:lambda-sweep} shows a monotone relationship between penalty weight and both $N_{2q}$ and accuracy: as $\lambda$ increases from $0$ to $0.2$, the model progressively prunes the entanglers (reducing $N_{2q}$ from $6$ to $3$) while CE loss and accuracy adjust smoothly from $(0.63,0.78)$ to $(0.74,0.68)$. Intermediate values such as $\lambda = 0.05$ and $\lambda = 0.10$ lie near the knee of the empirical Pareto curve, offering substantial gate savings for modest changes in accuracy.
+
+    \item \textbf{Mask ablation.} The mask ablation study in Table~\ref{tab:mask-ablation} and Fig.~\ref{fig:mask-ablation} demonstrates that, under a fixed gate budget ($N_{2q}=4$), learned masks retain baseline-level accuracy (e.g., $0.76$ at $\lambda=0.1$ and $0.73$ at $\lambda=0.3$), whereas random masks with the same sparsity suffer noticeable performance drops (mean accuracies of approximately $0.69$ and $0.63$, respectively). This highlights that the specific pattern of active entanglers, not just their number, is crucial for maintaining task performance.
+
+    \item \textbf{Training dynamics and pruning schedules.} Learning curves in Fig.~\ref{fig:training-dynamics} and Figs.~4--5 show that both baseline and compressed learners exhibit smooth convergence of CE loss and accuracy. For compressed runs, the two-qubit count and mask sparsity remain at their dense values early in training and then undergo a discrete transition (e.g., $N_{2q}: 6 \rightarrow 4$, $s: 1.0 \rightarrow 2/3$) once the pruning criterion is satisfied. Different pruning schedules (fixed vs.\ gentle vs.\ v2) alter the timing of this transition but converge to similar final sparsities, with small differences in CE loss and accuracy consistent with Table~\ref{tab:main-summary}.
+
+    \item \textbf{Extreme compression.} In exploratory runs where mask sparsity is driven down to $s \approx 0$ (no active entanglers), the learner behaves essentially as a one-qubit model and typically converges to accuracy only slightly above chance. These runs confirm that some entanglement is beneficial for capturing the Pothos--Chater structure and provide a lower bound against which the moderately compressed ($s = 2/3$) models can be compared.
+\end{itemize}
+
+\subsection*{\textbf{Additional Quantitative Results}}
+\label{appendix:additional-results}
+
+This appendix provides extended quantitative summaries that complement the
+main Results section in Section~\ref{sec:results}. Tables~\ref{tab:appendix-summary}--\ref{tab:mask-ablation}
+report detailed metrics for all experiment configurations, the full
+regularization sweep, and the mask-ablation study.  
+Figures~\ref{fig:A1-lambda-learning}--\ref{fig:A3-mask-sparsity}
+visualize the corresponding training dynamics, pruning schedules, and mask
+evolution.
+
+\subsection{Full Experiment Inventory (Table II)}
+
+Table~\ref{tab:appendix-summary} lists every YAML configuration evaluated in
+this project, including both baseline and compressed models. For each
+experiment we report the number of qubits $n$, circuit depth $D$, total number
+of optimization iterations, test accuracy (Acc), cross-entropy loss (CE),
+post-transpile two-qubit gate count $N_{2q}$, the number of active entanglers
+(\textit{ActEnt}) in the mask, and the final mask sparsity $s$.
+
+\begin{table}[H]
+\centering
+\caption{Full summary of experiments used in the main text. 
+Each row corresponds to a YAML configuration evaluated on the Pothos--Chater dataset. 
+$N_{2q}$ denotes the post-transpile two-qubit gate count, \textit{ActEnt} the number of active entanglers in the mask, and $s$ the final mask sparsity (fraction of active entanglers).}
+\label{tab:appendix-summary}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lccccccccc}
+\toprule
+                        Experiment &       Mode &  $n$ &  $D$ &  Iter & Acc &   CE & $N_{2q}$ & ActEnt &        $s$ \\
+\midrule
+             baseline\_pothos\_large &   baseline &  2 &  3 &   100 & 0.75 & 0.66 &    6 &       3 &      NaN \\
+        baseline\_pothos\_large\_adam &   baseline &  2 &  3 &   100 & 0.76 & 0.65 &    6 &       3 &      NaN \\
+   baseline\_pothos\_large\_channel08 &   baseline &  2 &  3 &   100 & 0.71 & 0.72 &    6 &       3 &      NaN \\
+      baseline\_pothos\_large\_depth4 &   baseline &  2 &  3 &   100 & 0.77 & 0.64 &    6 &       3 &      NaN \\
+  baseline\_pothos\_large\_expressive &   baseline &  2 &  3 &   100 & 0.78 & 0.64 &    6 &       3 &      NaN \\
+       baseline\_pothos\_large\_fixed &   baseline &  2 &  3 &   100 & 0.75 & 0.66 &    6 &       3 &      NaN \\
+      baseline\_pothos\_large\_lam001 &   baseline &  2 &  3 &   100 & 0.74 & 0.67 &    6 &       3 &      NaN \\
+           compressed\_pothos\_large & compressed &  2 &  3 &   100 & 0.74 & 0.67 &    4 &       2 & 0.333333 \\
+compressed\_pothos\_large\_expressive & compressed &  2 &  3 &   100 & 0.76 & 0.65 &    4 &       2 & 0.333333 \\
+     compressed\_pothos\_large\_fixed & compressed &  2 &  3 &   100 & 0.72 & 0.70 &    4 &       2 & 0.333333 \\
+    compressed\_pothos\_large\_gentle & compressed &  2 &  3 &   100 & 0.75 & 0.66 &    4 &       2 & 0.333333 \\
+        compressed\_pothos\_large\_v2 & compressed &  2 &  3 &   100 & 0.76 & 0.65 &    4 &       2 & 0.333333 \\
+               diagnostic\_baseline &   baseline &  2 &  3 &   100 & 0.80 & 0.63 &    6 &       3 &      NaN \\
+\bottomrule
+\end{tabular}
+}%
+\end{table}
+
+
+The table shows that all baseline models retain the full complement of three
+entanglers (ActEnt $=3$) and consistently transpile to circuits with $N_{2q}=6$
+two-qubit gates. Their accuracies span $0.71$--$0.80$, with the diagnostic
+baseline achieving the best performance (0.80, CE $=0.63$). All compressed
+models converge to architectures with two active entanglers (ActEnt $=2$,
+$s\approx 0.33$) and $N_{2q}=4$ post-transpilation. Within this compressed
+family, accuracies remain in the range $0.72$--$0.76$, illustrating that
+multiple pruning schedules and expressive variants reach broadly similar
+performance and cost profiles.
+
+\subsection{Detailed Regularization Sweep (Table III and Figure IV)}
+
+Table~\ref{tab:lambda-sweep} expands the regularization analysis from the main
+text by reporting the final metrics for each value of $\lambda$ explored in the
+sweep. In addition to the test accuracy and CE loss, the table includes the
+total objective $L = L_{\mathrm{CE}} + \lambda N_{2q}$, the post-transpile
+two-qubit count $N_{2q}$, mask sparsity $s$, and changes in gate count and
+accuracy relative to the unregularized configuration ($\lambda=0$).
+
+\begin{table}[H]
+\centering
+\caption{Regularization sweep for the hardware-aware loss. 
+For each value of $\lambda$, the table reports the final test accuracy (Acc), cross-entropy loss (CE), total loss $L = L_{\mathrm{CE}} + \lambda N_{2q}$, post-transpile two-qubit gate count $N_{2q}$, mask sparsity $s$ (fraction of active entanglers), and changes in gate count and accuracy relative to the unregularized case ($\lambda = 0$).}
+\label{tab:lambda-sweep}
+\begin{tabular}{cccccccc}
+\toprule
+ $\lambda$ &   Acc &    CE &   $L$ &  $N_{2q}$ &   $s$ &  $\Delta N_{2q}$ &  $\Delta$Acc \\
+\midrule
+     0.000 & 0.780 & 0.630 & 0.630 &         6 & 1.000 &                0 &        0.000 \\
+     0.001 & 0.780 & 0.630 & 0.636 &         6 & 0.950 &                0 &        0.000 \\
+     0.010 & 0.770 & 0.640 & 0.690 &         5 & 0.850 &                1 &       -0.010 \\
+     0.050 & 0.750 & 0.660 & 0.860 &         4 & 0.700 &                2 &       -0.030 \\
+     0.100 & 0.720 & 0.690 & 1.090 &         4 & 0.600 &                2 &       -0.060 \\
+     0.200 & 0.680 & 0.740 & 1.340 &         3 & 0.500 &                3 &       -0.100 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The first two rows show that very small penalties ($\lambda = 0$ and
+$10^{-3}$) behave almost identically: the mask remains effectively dense
+($s\approx 1$), no gates are removed ($\Delta N_{2q}=0$), and accuracy remains
+high (0.78). As $\lambda$ increases, the mask becomes sparser and $N_{2q}$
+decreases in discrete steps. At $\lambda = 0.05$, the learner has removed two
+two-qubit gates (from 6 to 4) while retaining relatively high accuracy
+(0.75). At the largest penalty ($\lambda=0.2$), the model has reduced the
+two-qubit count by half (to $N_{2q}=3$), but accuracy has dropped to 0.68 and
+the total loss $L$ has increased substantially.
+
+Figure~\ref{fig:A1-lambda-learning} visualizes the training dynamics that
+produce these summary statistics. The left panel plots CE loss as a function of
+iteration for each $\lambda$, while the right panel plots the corresponding
+accuracy curves.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{figure_A1_lambda_learning_curves.png}
+\caption{Learning curves for different regularization strengths $\lambda$. 
+(Left) Cross-entropy loss versus training iteration. 
+(Right) Accuracy versus training iteration. 
+Smaller penalties ($\lambda = 0$ and $10^{-3}$) converge to the lowest CE loss and highest accuracy, whereas larger penalties converge to slightly higher losses and lower accuracies, reflecting the trade-offs quantified in Table~\ref{tab:lambda-sweep}.}
+\label{fig:A1-lambda-learning}
+\end{figure}
+
+For all values of $\lambda$, the CE curves exhibit smooth descent from high
+initial loss to stable plateaus, indicating successful optimization of the
+variational parameters. The $\lambda=0$ and $\lambda=10^{-3}$ runs converge to
+the lowest CE values, consistent with their role as lightly regularized or
+unregularized baselines. The $\lambda=0.05$ and $\lambda=0.1$ curves level off
+at slightly higher loss, whereas the strongest penalty ($\lambda=0.2$) shows
+the highest plateau. The corresponding accuracy curves show a complementary
+pattern: all runs start near chance ($\approx 0.5$) and monotonically improve,
+with final accuracies decreasing as $\lambda$ increases in the order reported
+in Table~\ref{tab:lambda-sweep}. These curves therefore provide a
+time-resolved view of the accuracy--complexity trade-off summarized by the
+point estimates in the main text.
+
+\subsection{Pruning Schedules and Compression Dynamics (Figure 5)}
+
+While the previous subsection varied $\lambda$ within a single pruning scheme,
+the compressed experiments in the main text also explored different pruning
+schedules at a fixed penalty. Figure~\ref{fig:A2-pruning-schedules} compares
+three such schedules for the compressed learner: a gentle schedule, the ``v2''
+schedule, and a more aggressive fixed schedule. All three runs correspond to
+settings in Table~\ref{tab:appendix-summary} with a final two-qubit cost of
+$N_{2q}=4$.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{figure_A2_pruning_schedules.png}
+\caption{Effect of pruning schedule on compression dynamics for three compressed learners. 
+(Top) Cross-entropy loss versus training iteration for gentle pruning, v2 pruning, and a fixed pruning schedule. 
+(Bottom) Post-transpile two-qubit gate count $N_{2q}$ versus iteration. 
+All runs begin with 6 two-qubit gates and compress to 4 gates once pruning activates, but differ in their final cross-entropy levels, with gentle and v2 pruning converging to slightly lower losses than the fixed schedule.}
+\label{fig:A2-pruning-schedules}
+\end{figure}
+
+In the top panel, all three schedules start from similar initial CE values and
+decrease over time. The gentle and v2 schedules converge to CE losses around
+0.66 and 0.65, respectively, while the fixed schedule converges at a slightly
+higher loss (0.70), consistent with their final metrics in
+Table~\ref{tab:appendix-summary} and Table~\ref{tab:main-summary}.  
+The bottom panel shows that each schedule begins with $N_{2q}=6$ and then
+undergoes a discrete drop to $N_{2q}=4$ once pruning is triggered. After this
+transition, the gate count remains stable for the remainder of training. The
+panel thus makes explicit that all three schedules implement a similar
+compression in terms of gate count, differing mainly in when and how aggressively
+they prune entanglers, which in turn affects the final CE values.
+
+\subsection{Mask Evolution and Sparsity (Figure 4)}
+
+To further characterize the internal structure of the compressed circuits, we
+inspect the evolution of mask sparsity and the number of active entanglers
+during training. Figure~\ref{fig:A3-mask-sparsity} focuses on the gently pruned
+compressed model, which was highlighted in the main Results section.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{figure_A3_mask_sparsity_entanglers.png}
+\caption{Mask evolution for the gently pruned compressed learner. 
+Blue curve: mask sparsity $s$ (fraction of active entanglers) versus training iteration. 
+Red step curve: number of active entanglers versus iteration. 
+The model begins with a dense mask (three active entanglers, $s=1$) and then prunes to a configuration with two active entanglers ($s\approx 2/3$), which remains stable thereafter.}
+\label{fig:A3-mask-sparsity}
+\end{figure}
+
+The blue curve shows that the mask remains fully dense ($s=1$) over an initial
+segment of training and then drops sharply to $s\approx 2/3$. The red step
+curve tracks the number of active entanglers, which transitions from three to
+two at the same iteration and stays at that level. These trajectories indicate
+that the compressed learner exploits a fully entangled architecture early in
+optimization and only later commits to the final sparse entangling pattern
+used at evaluation time.
+
+\subsection{Mask Ablation Details (Table IV)}
+
+The mask ablation analysis in the main text compared baseline, learned, and
+random masks under a shared gate-count budget. Table~\ref{tab:mask-ablation}
+provides the numerical details underlying Fig.~\ref{fig:mask-ablation}, 
+aggregating results across seeds for the random-mask condition.
+
+\begin{table}[H]
+\centering
+\caption{Mask ablation summary. 
+$N_{2q}$: post-transpile two-qubit gates; $s$: mask sparsity; 
+Acc: mean test accuracy; Std.: standard deviation over random seeds; 
+$\Delta$Acc: change in accuracy relative to the full baseline circuit.}
+\label{tab:mask-ablation}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lcccccc}
+\toprule
+Mask   & $\lambda$ & $N_{2q}$ &   $s$ &   Acc &  Std. & $\Delta$Acc \\
+\midrule
+Baseline & 0.000 & 6 & 1.000 & 0.780 &   --   &  0.000 \\
+Learned  & 0.100 & 4 & 0.667 & 0.760 &   --   & -0.020 \\
+Random   & 0.100 & 4 & 0.667 & 0.690 & 0.008 & -0.090 \\
+Learned  & 0.300 & 4 & 0.667 & 0.730 &   --   & -0.050 \\
+Random   & 0.300 & 4 & 0.667 & 0.630 & 0.026 & -0.150 \\
+\bottomrule
+\end{tabular}
+}%
+\end{table}
+
+At $\lambda = 0.1$, the baseline circuit with six two-qubit gates attains an
+accuracy of 0.78 (see Table~\ref{tab:lambda-sweep}). The learned mask with
+four two-qubit gates achieves an accuracy of 0.76, only two percentage points
+lower ($\Delta$Acc $=-0.02$), whereas random masks with the same gate count and
+sparsity yield an average accuracy of 0.69 with small variance across seeds.
+At the stronger penalty $\lambda=0.3$, the learned mask retains an accuracy of
+0.73 (five percentage points below baseline), while random masks drop to an
+average of 0.63 with larger variability. These values quantify the trends
+visible in Fig.~\ref{fig:mask-ablation}, namely that structured, learned
+connectivity supports substantially better performance than random connectivity
+under an equivalent two-qubit budget.
+
+Overall, Tables~\ref{tab:appendix-summary}--\ref{tab:mask-ablation} and
+Figures~\ref{fig:A1-lambda-learning}--\ref{fig:A3-mask-sparsity} provide a
+detailed view of how the quantum Bayesian learner behaves across the full grid
+of hyperparameters, regularization strengths, and mask structures explored in
+this project, extending and supporting the main results reported in
+Section~\ref{sec:results}.
+
+
+\begin{thebibliography}{00}
+
+\bibitem{b1}
+T. D. Ullman and J. B. Tenenbaum, 
+``Bayesian models of conceptual development: Learning as building models of the world,'' 
+\textit{Annual Review of Developmental Psychology}, vol. 2, pp. 533--558, 2020.
+
+\bibitem{b2}
+T. L. Griffiths, N. Chater, C. Kemp, A. Perfors, and J. B. Tenenbaum,
+``Bayesian models of cognition,'' 
+in \textit{The Cambridge Handbook of Computational Psychology}. 
+Cambridge, U.K.: Cambridge Univ. Press, 2008.
+
+\bibitem{b3}
+J. R. Busemeyer and P. D. Bruza, 
+\textit{Quantum Models of Cognition and Decision}. 
+Cambridge, U.K.: Cambridge Univ. Press, 2012.
+
+\bibitem{b4}
+A. Kandala, A. Mezzacapo, K. Temme, M. Takita, M. Brink, J. M. Chow, and J. M. Gambetta, 
+``Hardware-efficient variational quantum eigensolver for small molecules and quantum magnets,''
+\textit{Nature}, vol. 549, pp. 242--246, 2017.
+
+\bibitem{b5}
+L. Leone, F. Tacchino, D. Gerace, and D. Bajoni, 
+``On the practical usefulness of the Hardware Efficient Ansatz,'' 
+\textit{Quantum}, vol. 8, p. 1395, 2024.
+
+\bibitem{b6}
+M. Cerezo, A. Sone, T. Volkoff, L. Cincio, and P. J. Coles,
+``Variational quantum algorithms,'' 
+\textit{Nature Reviews Physics}, vol. 3, pp. 625--644, 2021.
+
+\bibitem{b7}
+J. Preskill, 
+``Quantum computing in the NISQ era and beyond,'' 
+\textit{Quantum}, vol. 2, p. 79, 2018.
+
+\bibitem{b8}
+G. H. Low, T. J. Yoder, and I. L. Chuang, 
+``Quantum inference on Bayesian networks,'' 
+\textit{Physical Review A}, vol. 89, no. 6, p. 062315, 2014.
+
+\bibitem{b9}
+S. E. Borujeni and A. Witthaut, 
+``Quantum circuit representation of Bayesian networks,'' 
+\textit{Expert Systems with Applications}, vol. 183, p. 115365, 2021.
+
+\bibitem{b10}
+D. R. Pérez, E. Kapit, et all.
+``Error-divisible two-qubit gates,'' 
+\textit{Physical Review Applied}, vol. 19, p. 024043, 2023.
+
+\bibitem{b11}
+A. Perfors, J. B. Tenenbaum, T. L. Griffiths, and F. Xu,
+``A tutorial introduction to Bayesian models of cognitive development,'' 
+\textit{Cognition}, vol. 120, no. 3, pp. 302--321, 2011.
+
+\bibitem{b12}
+R. B. Griffiths, 
+``Quantum Channels, Kraus Operators, POVMs,'' 
+Lecture Notes, Carnegie Mellon University, 2011.
+
+\bibitem{b13}
+J. Preskill, 
+``Quantum Information, Chapter 3: Quantum Channels,'' 
+Lecture Notes for Ph219/CS219, California Institute of Technology, 2015.
+\bibitem{b1}
+T.~D. Ullman and J.~B. Tenenbaum, 
+``Bayesian models of conceptual development: Learning as building models of the world,'' 
+\textit{Annual Review of Developmental Psychology}, vol.~2, pp.~533--558, 2020.
+
+\bibitem{b2}
+T.~L. Griffiths, N.~Chater, C.~Kemp, A.~Perfors, and J.~B. Tenenbaum,
+``Bayesian models of cognition,'' 
+in \textit{The Cambridge Handbook of Computational Psychology}, 
+R.~Sun, Ed. Cambridge, U.K.: Cambridge Univ. Press, 2008, pp.~59--100.
+
+\bibitem{b3}
+J.~R. Busemeyer and P.~D. Bruza, 
+\textit{Quantum Models of Cognition and Decision}. 
+Cambridge, U.K.: Cambridge Univ. Press, 2012.
+
+\bibitem{b4}
+A.~Kandala, A.~Mezzacapo, K.~Temme, M.~Takita, M.~Brink, J.~M. Chow, and J.~M. Gambetta, 
+``Hardware-efficient variational quantum eigensolver for small molecules and quantum magnets,''
+\textit{Nature}, vol.~549, pp.~242--246, 2017.
+
+\bibitem{b5}
+L.~Leone, A.~Oliviero, L.~Cincio, and M.~Cerezo,
+``On the practical usefulness of the hardware efficient ansatz,''
+\textit{Quantum}, vol.~8, p.~1395, 2024.
+
+\bibitem{b6}
+M.~Cerezo, A.~Sone, T.~Volkoff, L.~Cincio, and P.~J. Coles,
+``Variational quantum algorithms,'' 
+\textit{Nature Reviews Physics}, vol.~3, pp.~625--644, 2021.
+
+\bibitem{b7}
+J.~Preskill, 
+``Quantum computing in the NISQ era and beyond,'' 
+\textit{Quantum}, vol.~2, p.~79, 2018.
+
+\bibitem{b8}
+G.~H. Low, T.~J. Yoder, and I.~L. Chuang, 
+``Quantum inference on Bayesian networks,'' 
+\textit{Physical Review A}, vol.~89, no.~6, p.~062315, 2014.
+
+\bibitem{b9}
+S.~Esfandiarpour Borujeni, S.~Nannapaneni, N.~H. Nguyen, E.~C. Behrman, and J.~E. Steck,
+``Quantum circuit representation of Bayesian networks,'' 
+\textit{Expert Systems with Applications}, vol.~176, p.~114768, 2021.
+
+\bibitem{b10}
+D.~Rodríguez Pérez, P.~Varosy, Z.~Li, T.~Roy, E.~Kapit, and D.~I. Schuster,
+``Error-divisible two-qubit gates,'' 
+\textit{Physical Review Applied}, vol.~19, p.~024043, 2023.
+
+\bibitem{b11}
+A.~Perfors, J.~B. Tenenbaum, T.~L. Griffiths, and F.~Xu,
+``A tutorial introduction to Bayesian models of cognitive development,'' 
+\textit{Cognition}, vol.~120, no.~3, pp.~302--321, 2011.
+
+\bibitem{b12}
+R.~B. Griffiths, 
+``Quantum channels, Kraus operators, POVMs,'' 
+Lecture Notes, Carnegie Mellon University, 2011. 
+[Online]. Available: \url{http://quantum.phys.cmu.edu/CQT/}
+
+\bibitem{b13}
+J.~Preskill, 
+``Quantum information, Chapter 3: Quantum channels,'' 
+Lecture Notes for Ph219/CS219, California Institute of Technology, 2015. 
+[Online]. Available: \url{http://theory.caltech.edu/~preskill/ph219/}
+
+\bibitem{b14}
+IBM Quantum,
+``Ground state energy estimation of the Heisenberg model with VQE,'' 
+Qiskit Textbook Tutorial, accessed December~2025. 
+[Online]. Available: \url{https://qiskit.org/textbook/}
+
+\bibitem{b15}
+M.~S. Jattana, D.~Bassirian, C.~Huerta Alderete, and P.~J. Pemberton-Ross,
+``Assessment of the variational quantum eigensolver: Application to the Heisenberg model,'' 
+\textit{Frontiers in Physics}, vol.~10, p.~907160, 2022.
+
+\bibitem{b16}
+Y.~Du, B.~Li, X.~Cao, Y.~Liu, T.~Huang, and D.~Tao,
+``Quantum circuit architecture search for variational quantum algorithms,'' 
+\textit{npj Quantum Information}, vol.~8, p.~62, 2022.
+
+\bibitem{b17}
+Y.~Huang, S.~Jin, Q.~Zeng, and L.~Shao,
+``Adaptive diversity-based quantum circuit architecture search,'' 
+\textit{Physical Review Research}, vol.~6, p.~033033, 2024.
+
+\bibitem{b18}
+J.~R. McClean, S.~Boixo, V.~N. Smelyanskiy, R.~Babbush, and H.~Neven,
+``Barren plateaus in quantum neural network training landscapes,'' 
+\textit{Nature Communications}, vol.~9, p.~4812, 2018.
+
+\bibitem{b19}
+E.~M. Pothos and N.~Chater,
+``A simplicity principle in unsupervised human categorization,''
+\textit{Cognitive Psychology}, vol.~45, no.~1, pp.~45--85, 2002.
+
+\bibitem{b20}
+A.~W. Harrow and A.~Montanaro, 
+``Quantum computational supremacy,'' 
+\textit{Nature}, vol.~549, pp.~203--209, 2017.
+
+\bibitem{b21}
+S.~Aaronson,
+``The limits of quantum computers,'' 
+\textit{Scientific American}, vol.~298, no.~3, pp.~62--69, 2008.
+
+\bibitem{b22}
+E.~Jeandel, S.~Perdrix, and R.~Vilmart,
+``Completeness of the ZX-calculus,'' 
+\textit{Logical Methods in Computer Science}, vol.~16, no.~2, paper~11, 2020.
+
+\bibitem{b23}
+A.~Kissinger and J.~van~de~Wetering,
+``PyZX: Large scale automated diagrammatic reasoning,'' 
+in \textit{Proceedings of the 16th International Conference on Quantum Physics and Logic (QPL 2019)}, 
+\textit{Electronic Proceedings in Theoretical Computer Science}, vol.~318, pp.~229--241, 2020.
+
+\bibitem{b24}
+H.~Abraham \textit{et al.},
+``Qiskit: An open-source framework for quantum computing,'' 
+Zenodo, 2019. 
+[Online]. Available: \url{https://doi.org/10.5281/zenodo.2562110}
+
+\bibitem{b25}
+D.~Wecker, M.~B. Hastings, and M.~Troyer,
+``Progress towards practical quantum variational algorithms,'' 
+\textit{Physical Review A}, vol.~92, p.~042303, 2015.
+
+\bibitem{b26}
+C.~J. Wood, J.~D. Biamonte, and D.~G. Cory,
+``Tensor networks and graphical calculus for open quantum systems,'' 
+\textit{Quantum Information and Computation}, vol.~15, no.~9--10, pp.~759--811, 2015.
+
+\bibitem{b27}
+S.~Sim, P.~D. Johnson, and A.~Aspuru-Guzik,
+``Expressibility and entangling capability of parameterized quantum circuits for hybrid quantum-classical algorithms,'' 
+\textit{Advanced Quantum Technologies}, vol.~2, no.~12, p.~1900070, 2019.
+
+\bibitem{b28}
+D.~J. Egger, J.~Mareček, and S.~Woerner, 
+``Warm-starting quantum optimization,'' 
+\textit{Quantum}, vol.~5, p.~479, 2021.
+
+\end{thebibliography}
+
+
+\end{document}
